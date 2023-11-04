@@ -1,0 +1,1796 @@
+ollingElement[upperSide];\n  }\n\n  return element[upperSide];\n}\n","import getScroll from './getScroll';\n\n/*\n * Sum or subtract the element scroll values (left and top) from a given rect object\n * @method\n * @memberof Popper.Utils\n * @param {Object} rect - Rect object you want to change\n * @param {HTMLElement} element - The element from the function reads the scroll values\n * @param {Boolean} subtract - set to true if you want to subtract the scroll values\n * @return {Object} rect - The modifier rect object\n */\nexport default function includeScroll(rect, element, subtract = false) {\n  const scrollTop = getScroll(element, 'top');\n  const scrollLeft = getScroll(element, 'left');\n  const modifier = subtract ? -1 : 1;\n  rect.top += scrollTop * modifier;\n  rect.bottom += scrollTop * modifier;\n  rect.left += scrollLeft * modifier;\n  rect.right += scrollLeft * modifier;\n  return rect;\n}\n","/*\n * Helper to detect borders of a given element\n * @method\n * @memberof Popper.Utils\n * @param {CSSStyleDeclaration} styles\n * Result of `getStyleComputedProperty` on the given element\n * @param {String} axis - `x` or `y`\n * @return {number} borders - The borders size of the given axis\n */\n\nexport default function getBordersSize(styles, axis) {\n  const sideA = axis === 'x' ? 'Left' : 'Top';\n  const sideB = sideA === 'Left' ? 'Right' : 'Bottom';\n\n  return (\n    parseFloat(styles[`border${sideA}Width`], 10) +\n    parseFloat(styles[`border${sideB}Width`], 10)\n  );\n}\n","import isIE from './isIE';\n\nfunction getSize(axis, body, html, computedStyle) {\n  return Math.max(\n    body[`offset${axis}`],\n    body[`scroll${axis}`],\n    html[`client${axis}`],\n    html[`offset${axis}`],\n    html[`scroll${axis}`],\n    isIE(10)\n      ? html[`offset${axis}`] +\n        computedStyle[`margin${axis === 'Height' ? 'Top' : 'Left'}`] +\n        computedStyle[`margin${axis === 'Height' ? 'Bottom' : 'Right'}`]\n      : 0\n  );\n}\n\nexport default function getWindowSizes() {\n  const body = document.body;\n  const html = document.documentElement;\n  const computedStyle = isIE(10) && getComputedStyle(html);\n\n  return {\n    height: getSize('Height', body, html, computedStyle),\n    width: getSize('Width', body, html, computedStyle),\n  };\n}\n","/**\n * Given element offsets, generate an output similar to getBoundingClientRect\n * @method\n * @memberof Popper.Utils\n * @argument {Object} offsets\n * @returns {Object} ClientRect like output\n */\nexport default function getClientRect(offsets) {\n  return {\n    ...offsets,\n    right: offsets.left + offsets.width,\n    bottom: offsets.top + offsets.height,\n  };\n}\n","import getStyleComputedProperty from './getStyleComputedProperty';\nimport getBordersSize from './getBordersSize';\nimport getWindowSizes from './getWindowSizes';\nimport getScroll from './getScroll';\nimport getClientRect from './getClientRect';\nimport isIE from './isIE';\n\n/**\n * Get bounding client rect of given element\n * @method\n * @memberof Popper.Utils\n * @param {HTMLElement} element\n * @return {Object} client rect\n */\nexport default function getBoundingClientRect(element) {\n  let rect = {};\n\n  // IE10 10 FIX: Please, don't ask, the element isn't\n  // considered in DOM in some circumstances...\n  // This isn't reproducible in IE10 compatibility mode of IE11\n  try {\n    if (isIE(10)) {\n      rect = element.getBoundingClientRect();\n      const scrollTop = getScroll(element, 'top');\n      const scrollLeft = getScroll(element, 'left');\n      rect.top += scrollTop;\n      rect.left += scrollLeft;\n      rect.bottom += scrollTop;\n      rect.right += scrollLeft;\n    }\n    else {\n      rect = element.getBoundingClientRect();\n    }\n  }\n  catch(e){}\n\n  const result = {\n    left: rect.left,\n    top: rect.top,\n    width: rect.right - rect.left,\n    height: rect.bottom - rect.top,\n  };\n\n  // subtract scrollbar size from sizes\n  const sizes = element.nodeName === 'HTML' ? getWindowSizes() : {};\n  const width =\n    sizes.width || element.clientWidth || result.right - result.left;\n  const height =\n    sizes.height || element.clientHeight || result.bottom - result.top;\n\n  let horizScrollbar = element.offsetWidth - width;\n  let vertScrollbar = element.offsetHeight - height;\n\n  // if an hypothetical scrollbar is detected, we must be sure it's not a `border`\n  // we make this check conditional for performance reasons\n  if (horizScrollbar || vertScrollbar) {\n    const styles = getStyleComputedProperty(element);\n    horizScrollbar -= getBordersSize(styles, 'x');\n    vertScrollbar -= getBordersSize(styles, 'y');\n\n    result.width -= horizScrollbar;\n    result.height -= vertScrollbar;\n  }\n\n  return getClientRect(result);\n}\n","import getStyleComputedProperty from './getStyleComputedProperty';\nimport includeScroll from './includeScroll';\nimport getScrollParent from './getScrollParent';\nimport getBoundingClientRect from './getBoundingClientRect';\nimport runIsIE from './isIE';\nimport getClientRect from './getClientRect';\n\nexport default function getOffsetRectRelativeToArbitraryNode(children, parent, fixedPosition = false) {\n  const isIE10 = runIsIE(10);\n  const isHTML = parent.nodeName === 'HTML';\n  const childrenRect = getBoundingClientRect(children);\n  const parentRect = getBoundingClientRect(parent);\n  const scrollParent = getScrollParent(children);\n\n  const styles = getStyleComputedProperty(parent);\n  const borderTopWidth = parseFloat(styles.borderTopWidth, 10);\n  const borderLeftWidth = parseFloat(styles.borderLeftWidth, 10);\n\n  // In cases where the parent is fixed, we must ignore negative scroll in offset calc\n  if(fixedPosition && parent.nodeName === 'HTML') {\n    parentRect.top = Math.max(parentRect.top, 0);\n    parentRect.left = Math.max(parentRect.left, 0);\n  }\n  let offsets = getClientRect({\n    top: childrenRect.top - parentRect.top - borderTopWidth,\n    left: childrenRect.left - parentRect.left - borderLeftWidth,\n    width: childrenRect.width,\n    height: childrenRect.height,\n  });\n  offsets.marginTop = 0;\n  offsets.marginLeft = 0;\n\n  // Subtract margins of documentElement in case it's being used as parent\n  // we do this only on HTML because it's the only element that behaves\n  // differently when margins are applied to it. The margins are included in\n  // the box of the documentElement, in the other cases not.\n  if (!isIE10 && isHTML) {\n    const marginTop = parseFloat(styles.marginTop, 10);\n    const marginLeft = parseFloat(styles.marginLeft, 10);\n\n    offsets.top -= borderTopWidth - marginTop;\n    offsets.bottom -= borderTopWidth - marginTop;\n    offsets.left -= borderLeftWidth - marginLeft;\n    offsets.right -= borderLeftWidth - marginLeft;\n\n    // Attach marginTop and marginLeft because in some circumstances we may need them\n    offsets.marginTop = marginTop;\n    offsets.marginLeft = marginLeft;\n  }\n\n  if (\n    isIE10 && !fixedPosition\n      ? parent.contains(scrollParent)\n      : parent === scrollParent && scrollParent.nodeName !== 'BODY'\n  ) {\n    offsets = includeScroll(offsets, parent);\n  }\n\n  return offsets;\n}\n","import getOffsetRectRelativeToArbitraryNode from './getOffsetRectRelativeToArbitraryNode';\nimport getScroll from './getScroll';\nimport getClientRect from './getClientRect';\n\nexport default function getViewportOffsetRectRelativeToArtbitraryNode(element, excludeScroll = false) {\n  const html = element.ownerDocument.documentElement;\n  const relativeOffset = getOffsetRectRelativeToArbitraryNode(element, html);\n  const width = Math.max(html.clientWidth, window.innerWidth || 0);\n  const height = Math.max(html.clientHeight, window.innerHeight || 0);\n\n  const scrollTop = !excludeScroll ? getScroll(html) : 0;\n  const scrollLeft = !excludeScroll ? getScroll(html, 'left') : 0;\n\n  const offset = {\n    top: scrollTop - relativeOffset.top + relativeOffset.marginTop,\n    left: scrollLeft - relativeOffset.left + relativeOffset.marginLeft,\n    width,\n    height,\n  };\n\n  return getClientRect(offset);\n}\n","import getStyleComputedProperty from './getStyleComputedProperty';\nimport getParentNode from './getParentNode';\n\n/**\n * Check if the given element is fixed or is inside a fixed parent\n * @method\n * @memberof Popper.Utils\n * @argument {Element} element\n * @argument {Element} customContainer\n * @returns {Boolean} answer to \"isFixed?\"\n */\nexport default function isFixed(element) {\n  const nodeName = element.nodeName;\n  if (nodeName === 'BODY' || nodeName === 'HTML') {\n    return false;\n  }\n  if (getStyleComputedProperty(element, 'position') === 'fixed') {\n    return true;\n  }\n  return isFixed(getParentNode(element));\n}\n","import getStyleComputedProperty from './getStyleComputedProperty';\nimport isIE from './isIE';\n/**\n * Finds the first parent of an element that has a transformed property defined\n * @method\n * @memberof Popper.Utils\n * @argument {Element} element\n * @returns {Element} first transformed parent or documentElement\n */\n\nexport default function getFixedPositionOffsetParent(element) {\n  // This check is needed to avoid errors in case one of the elements isn't defined for any reason\n   if (!element || !element.parentElement || isIE()) {\n    return document.documentElement;\n  }\n  let el = element.parentElement;\n  while (el && getStyleComputedProperty(el, 'transform') === 'none') {\n    el = el.parentElement;\n  }\n  return el || document.documentElement;\n\n}\n","import getScrollParent from './getScrollParent';\nimport getParentNode from './getParentNode';\nimport findCommonOffsetParent from './findCommonOffsetParent';\nimport getOffsetRectRelativeToArbitraryNode from './getOffsetRectRelativeToArbitraryNode';\nimport getViewportOffsetRectRelativeToArtbitraryNode from './getViewportOffsetRectRelativeToArtbitraryNode';\nimport getWindowSizes from './getWindowSizes';\nimport isFixed from './isFixed';\nimport getFixedPositionOffsetParent from './getFixedPositionOffsetParent';\n\n/**\n * Computed the boundaries limits and return them\n * @method\n * @memberof Popper.Utils\n * @param {HTMLElement} popper\n * @param {HTMLElement} reference\n * @param {number} padding\n * @param {HTMLElement} boundariesElement - Element used to define the boundaries\n * @param {Boolean} fixedPosition - Is in fixed position mode\n * @returns {Object} Coordinates of the boundaries\n */\nexport default function getBoundaries(\n  popper,\n  reference,\n  padding,\n  boundariesElement,\n  fixedPosition = false\n) {\n  // NOTE: 1 DOM access here\n\n  let boundaries = { top: 0, left: 0 };\n  const offsetParent = fixedPosition ? getFixedPositionOffsetParent(popper) : findCommonOffsetParent(popper, reference);\n\n  // Handle viewport case\n  if (boundariesElement === 'viewport' ) {\n    boundaries = getViewportOffsetRectRelativeToArtbitraryNode(offsetParent, fixedPosition);\n  }\n\n  else {\n    // Handle other cases based on DOM element used as boundaries\n    let boundariesNode;\n    if (boundariesElement === 'scrollParent') {\n      boundariesNode = getScrollParent(getParentNode(reference));\n      if (boundariesNode.nodeName === 'BODY') {\n        boundariesNode = popper.ownerDocument.documentElement;\n      }\n    } else if (boundariesElement === 'window') {\n      boundariesNode = popper.ownerDocument.documentElement;\n    } else {\n      boundariesNode = boundariesElement;\n    }\n\n    const offsets = getOffsetRectRelativeToArbitraryNode(\n      boundariesNode,\n      offsetParent,\n      fixedPosition\n    );\n\n    // In case of HTML, we need a different computation\n    if (boundariesNode.nodeName === 'HTML' && !isFixed(offsetParent)) {\n      const { height, width } = getWindowSizes();\n      boundaries.top += offsets.top - offsets.marginTop;\n      boundaries.bottom = height + offsets.top;\n      boundaries.left += offsets.left - offsets.marginLeft;\n      boundaries.right = width + offsets.left;\n    } else {\n      // for all the other DOM elements, this one is good\n      boundaries = offsets;\n    }\n  }\n\n  // Add paddings\n  boundaries.left += padding;\n  boundaries.top += padding;\n  boundaries.right -= padding;\n  boundaries.bottom -= padding;\n\n  return boundaries;\n}\n","import getBoundaries from '../utils/getBoundaries';\n\nfunction getArea({ width, height }) {\n  return width * height;\n}\n\n/**\n * Utility used to transform the `auto` placement to the placement with more\n * available space.\n * @method\n * @memberof Popper.Utils\n * @argument {Object} data - The data object generated by update method\n * @argument {Object} options - Modifiers configuration and options\n * @returns {Object} The data object, properly modified\n */\nexport default function computeAutoPlacement(\n  placement,\n  refRect,\n  popper,\n  reference,\n  boundariesElement,\n  padding = 0\n) {\n  if (placement.indexOf('auto') === -1) {\n    return placement;\n  }\n\n  const boundaries = getBoundaries(\n    popper,\n    reference,\n    padding,\n    boundariesElement\n  );\n\n  const rects = {\n    top: {\n      width: boundaries.width,\n      height: refRect.top - boundaries.top,\n    },\n    right: {\n      width: boundaries.right - refRect.right,\n      height: boundaries.height,\n    },\n    bottom: {\n      width: boundaries.width,\n      height: boundaries.bottom - refRect.bottom,\n    },\n    left: {\n      width: refRect.left - boundaries.left,\n      height: boundaries.height,\n    },\n  };\n\n  const sortedAreas = Object.keys(rects)\n    .map(key => ({\n      key,\n      ...rects[key],\n      area: getArea(rects[key]),\n    }))\n    .sort((a, b) => b.area - a.area);\n\n  const filteredAreas = sortedAreas.filter(\n    ({ width, height }) =>\n      width >= popper.clientWidth && height >= popper.clientHeight\n  );\n\n  const computedPlacement = filteredAreas.length > 0\n    ? filteredAreas[0].key\n    : sortedAreas[0].key;\n\n  const variation = placement.split('-')[1];\n\n  return computedPlacement + (variation ? `-${variation}` : '');\n}\n","import isBrowser from './isBrowser';\n\nconst longerTimeoutBrowsers = ['Edge', 'Trident', 'Firefox'];\nlet timeoutDuration = 0;\nfor (let i = 0; i < longerTimeoutBrowsers.length; i += 1) {\n  if (isBrowser && navigator.userAgent.indexOf(longerTimeoutBrowsers[i]) >= 0) {\n    timeoutDuration = 1;\n    break;\n  }\n}\n\nexport function microtaskDebounce(fn) {\n  let called = false\n  return () => {\n    if (called) {\n      return\n    }\n    called = true\n    window.Promise.resolve().then(() => {\n      called = false\n      fn()\n    })\n  }\n}\n\nexport function taskDebounce(fn) {\n  let scheduled = false;\n  return () => {\n    if (!scheduled) {\n      scheduled = true;\n      setTimeout(() => {\n        scheduled = false;\n        fn();\n      }, timeoutDuration);\n    }\n  };\n}\n\nconst supportsMicroTasks = isBrowser && window.Promise\n\n\n/**\n* Create a debounced version of a method, that's asynchronously deferred\n* but called in the minimum time possible.\n*\n* @method\n* @memberof Popper.Utils\n* @argument {Function} fn\n* @returns {Function}\n*/\nexport default (supportsMicroTasks\n  ? microtaskDebounce\n  : taskDebounce);\n","/**\n * Mimics the `find` method of Array\n * @method\n * @memberof Popper.Utils\n * @argument {Array} arr\n * @argument prop\n * @argument value\n * @returns index or -1\n */\nexport default function find(arr, check) {\n  // use native find if supported\n  if (Array.prototype.find) {\n    return arr.find(check);\n  }\n\n  // use `filter` to obtain the same behavior of `find`\n  return arr.filter(check)[0];\n}\n","import find from './find';\n\n/**\n * Return the index of the matching object\n * @method\n * @memberof Popper.Utils\n * @argument {Array} arr\n * @argument prop\n * @argument value\n * @returns index or -1\n */\nexport default function findIndex(arr, prop, value) {\n  // use native findIndex if supported\n  if (Array.prototype.findIndex) {\n    return arr.findIndex(cur => cur[prop] === value);\n  }\n\n  // use `find` + `indexOf` if `findIndex` isn't supported\n  const match = find(arr, obj => obj[prop] === value);\n  return arr.indexOf(match);\n}\n","import getWindowSizes from './getWindowSizes';\nimport getClientRect from './getClientRect';\n\n/**\n * Get the position of the given element, relative to its offset parent\n * @method\n * @memberof Popper.Utils\n * @param {Element} element\n * @return {Object} position - Coordinates of the element and its `scrollTop`\n */\nexport default function getOffsetRect(element) {\n  let elementRect;\n  if (element.nodeName === 'HTML') {\n    const { width, height } = getWindowSizes();\n    elementRect = {\n      width,\n      height,\n      left: 0,\n      top: 0,\n    };\n  } else {\n    elementRect = {\n      width: element.offsetWidth,\n      height: element.offsetHeight,\n      left: element.offsetLeft,\n      top: element.offsetTop,\n    };\n  }\n\n  // position\n  return getClientRect(elementRect);\n}\n","/**\n * Get the outer sizes of the given element (offset size + margins)\n * @method\n * @memberof Popper.Utils\n * @argument {Element} element\n * @returns {Object} object containing width and height properties\n */\nexport default function getOuterSizes(element) {\n  const styles = getComputedStyle(element);\n  const x = parseFloat(styles.marginTop) + parseFloat(styles.marginBottom);\n  const y = parseFloat(styles.marginLeft) + parseFloat(styles.marginRight);\n  const result = {\n    width: element.offsetWidth + y,\n    height: element.offsetHeight + x,\n  };\n  return result;\n}\n","/**\n * Get the opposite placement of the given one\n * @method\n * @memberof Popper.Utils\n * @argument {String} placement\n * @returns {String} flipped placement\n */\nexport default function getOppositePlacement(placement) {\n  const hash = { left: 'right', right: 'left', bottom: 'top', top: 'bottom' };\n  return placement.replace(/left|right|bottom|top/g, matched => hash[matched]);\n}\n","import getOuterSizes from './getOuterSizes';\nimport getOppositePlacement from './getOppositePlacement';\n\n/**\n * Get offsets to the popper\n * @method\n * @memberof Popper.Utils\n * @param {Object} position - CSS position the Popper will get applied\n * @param {HTMLElement} popper - the popper element\n * @param {Object} referenceOffsets - the reference offsets (the popper will be relative to this)\n * @param {String} placement - one of the valid placement options\n * @returns {Object} popperOffsets - An object containing the offsets which will be applied to the popper\n */\nexport default function getPopperOffsets(popper, referenceOffsets, placement) {\n  placement = placement.split('-')[0];\n\n  // Get popper node sizes\n  const popperRect = getOuterSizes(popper);\n\n  // Add position, width and height to our offsets object\n  const popperOffsets = {\n    width: popperRect.width,\n    height: popperRect.height,\n  };\n\n  // depending by the popper placement we have to compute its offsets slightly differently\n  const isHoriz = ['right', 'left'].indexOf(placement) !== -1;\n  const mainSide = isHoriz ? 'top' : 'left';\n  const secondarySide = isHoriz ? 'left' : 'top';\n  const measurement = isHoriz ? 'height' : 'width';\n  const secondaryMeasurement = !isHoriz ? 'height' : 'width';\n\n  popperOffsets[mainSide] =\n    referenceOffsets[mainSide] +\n    referenceOffsets[measurement] / 2 -\n    popperRect[measurement] / 2;\n  if (placement === secondarySide) {\n    popperOffsets[secondarySide] =\n      referenceOffsets[secondarySide] - popperRect[secondaryMeasurement];\n  } else {\n    popperOffsets[secondarySide] =\n      referenceOffsets[getOppositePlacement(secondarySide)];\n  }\n\n  return popperOffsets;\n}\n","import findCommonOffsetParent from './findCommonOffsetParent';\nimport getOffsetRectRelativeToArbitraryNode from './getOffsetRectRelativeToArbitraryNode';\nimport getFixedPositionOffsetParent from './getFixedPositionOffsetParent';\n\n/**\n * Get offsets to the reference element\n * @method\n * @memberof Popper.Utils\n * @param {Object} state\n * @param {Element} popper - the popper element\n * @param {Element} reference - the reference element (the popper will be relative to this)\n * @param {Element} fixedPosition - is in fixed position mode\n * @returns {Object} An object containing the offsets which will be applied to the popper\n */\nexport default function getReferenceOffsets(state, popper, reference, fixedPosition = null) {\n  const commonOffsetParent = fixedPosition ? getFixedPositionOffsetParent(popper) : findCommonOffsetParent(popper, reference);\n  return getOffsetRectRelativeToArbitraryNode(reference, commonOffsetParent, fixedPosition);\n}\n","/**\n * Get the prefixed supported property name\n * @method\n * @memberof Popper.Utils\n * @argument {String} property (camelCase)\n * @returns {String} prefixed property (camelCase or PascalCase, depending on the vendor prefix)\n */\nexport default function getSupportedPropertyName(property) {\n  const prefixes = [false, 'ms', 'Webkit', 'Moz', 'O'];\n  const upperProp = property.charAt(0).toUpperCase() + property.slice(1);\n\n  for (let i = 0; i < prefixes.length; i++) {\n    const prefix = prefixes[i];\n    const toCheck = prefix ? `${prefix}${upperProp}` : property;\n    if (typeof document.body.style[toCheck] !== 'undefined') {\n      return toCheck;\n    }\n  }\n  return null;\n}\n","/**\n * Check if the given variable is a function\n * @method\n * @memberof Popper.Utils\n * @argument {Any} functionToCheck - variable to check\n * @returns {Boolean} answer to: is a function?\n */\nexport default function isFunction(functionToCheck) {\n  const getType = {};\n  return (\n    functionToCheck &&\n    getType.toString.call(functionToCheck) === '[object Function]'\n  );\n}\n","/**\n * Helper used to know if the given modifier is enabled.\n * @method\n * @memberof Popper.Utils\n * @returns {Boolean}\n */\nexport default function isModifierEnabled(modifiers, modifierName) {\n  return modifiers.some(\n    ({ name, enabled }) => enabled && name === modifierName\n  );\n}\n","import find from './find';\n\n/**\n * Helper used to know if the given modifier depends from another one.<br />\n * It checks if the needed modifier is listed and enabled.\n * @method\n * @memberof Popper.Utils\n * @param {Array} modifiers - list of modifiers\n * @param {String} requestingName - name of requesting modifier\n * @param {String} requestedName - name of requested modifier\n * @returns {Boolean}\n */\nexport default function isModifierRequired(\n  modifiers,\n  requestingName,\n  requestedName\n) {\n  const requesting = find(modifiers, ({ name }) => name === requestingName);\n\n  const isRequired =\n    !!requesting &&\n    modifiers.some(modifier => {\n      return (\n        modifier.name === requestedName &&\n        modifier.enabled &&\n        modifier.order < requesting.order\n      );\n    });\n\n  if (!isRequired) {\n    const requesting = `\\`${requestingName}\\``;\n    const requested = `\\`${requestedName}\\``;\n    console.warn(\n      `${requested} modifier is required by ${requesting} modifier in order to work, be sure to include it before ${requesting}!`\n    );\n  }\n  return isRequired;\n}\n","/**\n * Tells if a given input is a number\n * @method\n * @memberof Popper.Utils\n * @param {*} input to check\n * @return {Boolean}\n */\nexport default function isNumeric(n) {\n  return n !== '' && !isNaN(parseFloat(n)) && isFinite(n);\n}\n","/**\n * Get the window associated with the element\n * @argument {Element} element\n * @returns {Window}\n */\nexport default function getWindow(element) {\n  const ownerDocument = element.ownerDocument;\n  return ownerDocument ? ownerDocument.defaultView : window;\n}\n","import getWindow from './getWindow';\n\n/**\n * Remove event listeners used to update the popper position\n * @method\n * @memberof Popper.Utils\n * @private\n */\nexport default function removeEventListeners(reference, state) {\n  // Remove resize event listener on window\n  getWindow(reference).removeEventListener('resize', state.updateBound);\n\n  // Remove scroll event listener on scroll parents\n  state.scrollParents.forEach(target => {\n    target.removeEventListener('scroll', state.updateBound);\n  });\n\n  // Reset state\n  state.updateBound = null;\n  state.scrollParents = [];\n  state.scrollElement = null;\n  state.eventsEnabled = false;\n  return state;\n}\n","import isFunction from './isFunction';\nimport findIndex from './findIndex';\nimport getClientRect from '../utils/getClientRect';\n\n/**\n * Loop trough the list of modifiers and run them in order,\n * each of them will then edit the data object.\n * @method\n * @memberof Popper.Utils\n * @param {dataObject} data\n * @param {Array} modifiers\n * @param {String} ends - Optional modifier name used as stopper\n * @returns {dataObject}\n */\nexport default function runModifiers(modifiers, data, ends) {\n  const modifiersToRun = ends === undefined\n    ? modifiers\n    : modifiers.slice(0, findIndex(modifiers, 'name', ends));\n\n  modifiersToRun.forEach(modifier => {\n    if (modifier['function']) { // eslint-disable-line dot-notation\n      console.warn('`modifier.function` is deprecated, use `modifier.fn`!');\n    }\n    const fn = modifier['function'] || modifier.fn; // eslint-disable-line dot-notation\n    if (modifier.enabled && isFunction(fn)) {\n      // Add properties to offsets to make them a complete clientRect object\n      // we do this before each modifier to make sure the previous one doesn't\n      // mess with these values\n      data.offsets.popper = getClientRect(data.offsets.popper);\n      data.offsets.reference = getClientRect(data.offsets.reference);\n\n      data = fn(data, modifier);\n    }\n  });\n\n  return data;\n}\n","/**\n * Set the attributes to the given popper\n * @method\n * @memberof Popper.Utils\n * @argument {Element} element - Element to apply the attributes to\n * @argument {Object} styles\n * Object with a list of properties and values which will be applied to the element\n */\nexport default function setAttributes(element, attributes) {\n  Object.keys(attributes).forEach(function(prop) {\n    const value = attributes[prop];\n    if (value !== false) {\n      element.setAttribute(prop, attributes[prop]);\n    } else {\n      element.removeAttribute(prop);\n    }\n  });\n}\n","import isNumeric from './isNumeric';\n\n/**\n * Set the style to the given popper\n * @method\n * @memberof Popper.Utils\n * @argument {Element} element - Element to apply the style to\n * @argument {Object} styles\n * Object with a list of properties and values which will be applied to the element\n */\nexport default function setStyles(element, styles) {\n  Object.keys(styles).forEach(prop => {\n    let unit = '';\n    // add unit if the value is numeric and is one of the following\n    if (\n      ['width', 'height', 'top', 'right', 'bottom', 'left'].indexOf(prop) !==\n        -1 &&\n      isNumeric(styles[prop])\n    ) {\n      unit = 'px';\n    }\n    element.style[prop] = styles[prop] + unit;\n  });\n}\n","import getScrollParent from './getScrollParent';\nimport getWindow from './getWindow';\n\nfunction attachToScrollParents(scrollParent, event, callback, scrollParents) {\n  const isBody = scrollParent.nodeName === 'BODY';\n  const target = isBody ? scrollParent.ownerDocument.defaultView : scrollParent;\n  target.addEventListener(event, callback, { passive: true });\n\n  if (!isBody) {\n    attachToScrollParents(\n      getScrollParent(target.parentNode),\n      event,\n      callback,\n      scrollParents\n    );\n  }\n  scrollParents.push(target);\n}\n\n/**\n * Setup needed event listeners used to update the popper position\n * @method\n * @memberof Popper.Utils\n * @private\n */\nexport default function setupEventListeners(\n  reference,\n  options,\n  state,\n  updateBound\n) {\n  // Resize event listener on window\n  state.updateBound = updateBound;\n  getWindow(reference).addEventListener('resize', state.updateBound, { passive: true });\n\n  // Scroll event listener on scroll parents\n  const scrollElement = getScrollParent(reference);\n  attachToScrollParents(\n    scrollElement,\n    'scroll',\n    state.updateBound,\n    state.scrollParents\n  );\n  state.scrollElement = scrollElement;\n  state.eventsEnabled = true;\n\n  return state;\n}\n","import computeAutoPlacement from './computeAutoPlacement';\nimport debounce from './debounce';\nimport findIndex from './findIndex';\nimport getBordersSize from './getBordersSize';\nimport getBoundaries from './getBoundaries';\nimport getBoundingClientRect from './getBoundingClientRect';\nimport getClientRect from './getClientRect';\nimport getOffsetParent from './getOffsetParent';\nimport getOffsetRect from './getOffsetRect';\nimport getOffsetRectRelativeToArbitraryNode from './getOffsetRectRelativeToArbitraryNode';\nimport getOuterSizes from './getOuterSizes';\nimport getParentNode from './getParentNode';\nimport getPopperOffsets from './getPopperOffsets';\nimport getReferenceOffsets from './getReferenceOffsets';\nimport getScroll from './getScroll';\nimport getScrollParent from './getScrollParent';\nimport getStyleComputedProperty from './getStyleComputedProperty';\nimport getSupportedPropertyName from './getSupportedPropertyName';\nimport getWindowSizes from './getWindowSizes';\nimport isFixed from './isFixed';\nimport isFunction from './isFunction';\nimport isModifierEnabled from './isModifierEnabled';\nimport isModifierRequired from './isModifierRequired';\nimport isNumeric from './isNumeric';\nimport removeEventListeners from './removeEventListeners';\nimport runModifiers from './runModifiers';\nimport setAttributes from './setAttributes';\nimport setStyles from './setStyles';\nimport setupEventListeners from './setupEventListeners';\n\n/** @namespace Popper.Utils */\nexport {\n  computeAutoPlacement,\n  debounce,\n  findIndex,\n  getBordersSize,\n  getBoundaries,\n  getBoundingClientRect,\n  getClientRect,\n  getOffsetParent,\n  getOffsetRect,\n  getOffsetRectRelativeToArbitraryNode,\n  getOuterSizes,\n  getParentNode,\n  getPopperOffsets,\n  getReferenceOffsets,\n  getScroll,\n  getScrollParent,\n  getStyleComputedProperty,\n  getSupportedPropertyName,\n  getWindowSizes,\n  isFixed,\n  isFunction,\n  isModifierEnabled,\n  isModifierRequired,\n  isNumeric,\n  removeEventListeners,\n  runModifiers,\n  setAttributes,\n  setStyles,\n  setupEventListeners,\n};\n\n// This is here just for backward compatibility with versions lower than v1.10.3\n// you should import the utilities using named exports, if you want them all use:\n// ```\n// import * as PopperUtils from 'popper-utils';\n// ```\n// The default export will be removed in the next major version.\nexport default {\n  computeAutoPlacement,\n  debounce,\n  findIndex,\n  getBordersSize,\n  getBoundaries,\n  getBoundingClientRect,\n  getClientRect,\n  getOffsetParent,\n  getOffsetRect,\n  getOffsetRectRelativeToArbitraryNode,\n  getOuterSizes,\n  getParentNode,\n  getPopperOffsets,\n  getReferenceOffsets,\n  getScroll,\n  getScrollParent,\n  getStyleComputedProperty,\n  getSupportedPropertyName,\n  getWindowSizes,\n  isFixed,\n  isFunction,\n  isModifierEnabled,\n  isModifierRequired,\n  isNumeric,\n  removeEventListeners,\n  runModifiers,\n  setAttributes,\n  setStyles,\n  setupEventListeners,\n};\n"],"names":["element","nodeType","css","getComputedStyle","property","nodeName","parentNode","host","document","body","ownerDocument","getStyleComputedProperty","overflow","overflowX","overflowY","test","getScrollParent","getParentNode","window","isIE10","isBrowser","navigator","userAgent","version","isIE11","documentElement","noOffsetParent","isIE","offsetParent","nextElementSibling","indexOf","getOffsetParent","firstElementChild","node","getRoot","element1","element2","order","compareDocumentPosition","Node","DOCUMENT_POSITION_FOLLOWING","start","end","range","createRange","setStart","setEnd","commonAncestorContainer","contains","isOffsetContainer","element1root","findCommonOffsetParent","side","upperSide","html","scrollingElement","subtract","scrollTop","getScroll","scrollLeft","modifier","top","bottom","left","right","sideA","axis","sideB","parseFloat","styles","Math","max","computedStyle","getSize","offsets","width","height","rect","getBoundingClientRect","result","sizes","getWindowSizes","clientWidth","clientHeight","horizScrollbar","offsetWidth","vertScrollbar","offsetHeight","getBordersSize","getClientRect","fixedPosition","runIsIE","isHTML","parent","childrenRect","parentRect","scrollParent","borderTopWidth","borderLeftWidth","marginTop","marginLeft","includeScroll","excludeScroll","relativeOffset","getOffsetRectRelativeToArbitraryNode","innerWidth","innerHeight","offset","isFixed","parentElement","el","boundaries","getFixedPositionOffsetParent","boundariesElement","getViewportOffsetRectRelativeToArtbitraryNode","boundariesNode","popper","padding","placement","getBoundaries","rects","refRect","sortedAreas","Object","keys","map","getArea","sort","b","area","a","filteredAreas","filter","computedPlacement","length","key","variation","split","longerTimeoutBrowsers","timeoutDuration","i","called","Promise","resolve","then","scheduled","supportsMicroTasks","Array","prototype","find","arr","findIndex","cur","match","obj","elementRect","offsetLeft","offsetTop","x","marginBottom","y","marginRight","hash","replace","popperRect","getOuterSizes","popperOffsets","isHoriz","mainSide","secondarySide","measurement","secondaryMeasurement","referenceOffsets","getOppositePlacement","commonOffsetParent","prefixes","upperProp","charAt","toUpperCase","slice","prefix","toCheck","style","functionToCheck","getType","toString","call","modifiers","some","name","enabled","requesting","isRequired","warn","requested","n","isNaN","isFinite","defaultView","removeEventListener","state","updateBound","scrollParents","forEach","scrollElement","eventsEnabled","modifiersToRun","ends","fn","isFunction","data","reference","value","attributes","removeAttribute","setAttribute","unit","isNumeric","isBody","target","addEventListener","passive","push"],"mappings":"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"}                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              <?xml version="1.0"?>
+<doc>
+    <assembly>
+        <name>Microsoft.AspNet.Identity.EntityFramework</name>
+    </assembly>
+    <members>
+        <member name="T:Microsoft.AspNet.Identity.EntityFramework.RoleStore`1">
+            <summary>
+                EntityFramework based implementation
+            </summary>
+            <typeparam name="TRole"></typeparam>
+        </member>
+        <member name="T:Microsoft.AspNet.Identity.EntityFramework.RoleStore`3">
+            <summary>
+                EntityFramework based implementation
+            </summary>
+            <typeparam name="TRole"></typeparam>
+            <typeparam name="TKey"></typeparam>
+            <typeparam name="TUserRole"></typeparam>
+        </member>
+        <member name="M:Microsoft.AspNet.Identity.EntityFramework.RoleStore`3.#ctor(System.Data.Entity.DbContext)">
+            <summary>
+                Constructor which takes a db context and wires up the stores with default instances using the context
+            </summary>
+            <param name="context"></param>
+        </member>
+        <member name="M:Microsoft.AspNet.Identity.EntityFramework.RoleStore`3.FindByIdAsync(`1)">
+            <summary>
+                Find a role by id
+            </summary>
+            <param name="roleId"></param>
+            <returns></returns>
+        </member>
+        <member name="M:Microsoft.AspNet.Identity.EntityFramework.RoleStore`3.FindByNameAsync(System.String)">
+            <summary>
+                Find a role by name
+            </summary>
+            <param name="roleName"></param>
+            <returns></returns>
+        </member>
+        <member name="M:Microsoft.AspNet.Identity.EntityFramework.RoleStore`3.CreateAsync(`0)">
+            <summary>
+                Insert an entity
+            </summary>
+            <param name="role"></param>
+        </member>
+        <member name="M:Microsoft.AspNet.Identity.EntityFramework.RoleStore`3.DeleteAsync(`0)">
+            <summary>
+                Mark an entity for deletion
+            </summary>
+            <param name="role"></param>
+        </member>
+        <member name="M:Microsoft.AspNet.Identity.EntityFramework.RoleStore`3.UpdateAsync(`0)">
+            <summary>
+                Update an entity
+            </summary>
+            <param name="role"></param>
+        </member>
+        <member name="M:Microsoft.AspNet.Identity.EntityFramework.RoleStore`3.Dispose">
+            <summary>
+                Dispose the store
+            </summary>
+        </member>
+        <member name="M:Microsoft.AspNet.Identity.EntityFramework.RoleStore`3.Dispose(System.Boolean)">
+            <summary>
+                If disposing, calls dispose on the Context.  Always nulls out the Context
+            </summary>
+            <param name="disposing"></param>
+        </member>
+        <member name="P:Microsoft.AspNet.Identity.EntityFramework.RoleStore`3.Context">
+            <summary>
+                Context for the store
+            </summary>
+        </member>
+        <member name="P:Microsoft.AspNet.Identity.EntityFramework.RoleStore`3.DisposeContext">
+            <summary>
+                If true will call dispose on the DbContext during Dipose
+            </summary>
+        </member>
+        <member name="P:Microsoft.AspNet.Identity.EntityFramework.RoleStore`3.Roles">
+            <summary>
+                Returns an IQueryable of users
+            </summary>
+        </member>
+        <member name="M:Microsoft.AspNet.Identity.EntityFramework.RoleStore`1.#ctor">
+            <summary>
+                Constructor
+            </summary>
+        </member>
+        <member name="M:Microsoft.AspNet.Identity.EntityFramework.RoleStore`1.#ctor(System.Data.Entity.DbContext)">
+            <summary>
+                Constructor
+            </summary>
+            <param name="context"></param>
+        </member>
+        <member name="T:Microsoft.AspNet.Identity.EntityFramework.UserStore`1">
+            <summary>
+                EntityFramework based user store implementation that supports IUserStore, IUserLoginStore, IUserClaimStore and
+                IUserRoleStore
+            </summary>
+            <typeparam name="TUser"></typeparam>
+        </member>
+        <member name="T:Microsoft.AspNet.Identity.EntityFramework.UserStore`6">
+            <summary>
+                EntityFramework based user store implementation that supports IUserStore, IUserLoginStore, IUserClaimStore and
+                IUserRoleStore
+            </summary>
+            <typeparam name="TUser"></typeparam>
+            <typeparam name="TRole"></typeparam>
+            <typeparam name="TKey"></typeparam>
+            <typeparam name="TUserLogin"></typeparam>
+            <typeparam name="TUserRole"></typeparam>
+            <typeparam name="TUserClaim"></typeparam>
+        </member>
+        <member name="M:Microsoft.AspNet.Identity.EntityFramework.UserStore`6.#ctor(System.Data.Entity.DbContext)">
+            <summary>
+                Constructor which takes a db context and wires up the stores with default instances using the context
+            </summary>
+            <param name="context"></param>
+        </member>
+        <member name="M:Microsoft.AspNet.Identity.EntityFramework.UserStore`6.GetClaimsAsync(`0)">
+            <summary>
+                Return the claims for a user
+            </summary>
+            <param name="user"></param>
+            <returns></returns>
+        </member>
+        <member name="M:Microsoft.AspNet.Identity.EntityFramework.UserStore`6.AddClaimAsync(`0,System.Security.Claims.Claim)">
+            <summary>
+                Add a claim to a user
+            </summary>
+            <param name="user"></param>
+            <param name="claim"></param>
+            <returns></returns>
+        </member>
+        <member name="M:Microsoft.AspNet.Identity.EntityFramework.UserStore`6.RemoveClaimAsync(`0,System.Security.Claims.Claim)">
+            <summary>
+                Remove a claim from a user
+            </summary>
+            <param name="user"></param>
+            <param name="claim"></param>
+            <returns></returns>
+        </member>
+        <member name="M:Microsoft.AspNet.Identity.EntityFramework.UserStore`6.GetEmailConfirmedAsync(`0)">
+            <summary>
+                Returns whether the user email is confirmed
+            </summary>
+            <param name="user"></param>
+            <returns></returns>
+        </member>
+        <member name="M:Microsoft.AspNet.Identity.EntityFramework.UserStore`6.SetEmailConfirmedAsync(`0,System.Boolean)">
+            <summary>
+                Set IsConfirmed on the user
+            </summary>
+            <param name="user"></param>
+            <param name="confirmed"></param>
+            <returns></returns>
+        </member>
+        <member name="M:Microsoft.AspNet.Identity.EntityFramework.UserStore`6.SetEmailAsync(`0,System.String)">
+            <summary>
+                Set the user email
+            </summary>
+            <param name="user"></param>
+            <param name="email"></param>
+            <returns></returns>
+        </member>
+        <member name="M:Microsoft.AspNet.Identity.EntityFramework.UserStore`6.GetEmailAsync(`0)">
+            <summary>
+                Get the user's email
+            </summary>
+            <param name="user"></param>
+            <returns></returns>
+        </member>
+        <member name="M:Microsoft.AspNet.Identity.EntityFramework.UserStore`6.FindByEmailAsync(System.String)">
+            <summary>
+                Find a user by email
+            </summary>
+            <param name="email"></param>
+            <returns></returns>
+        </member>
+        <member name="M:Microsoft.AspNet.Identity.EntityFramework.UserStore`6.GetLockoutEndDateAsync(`0)">
+            <summary>
+                Returns the DateTimeOffset that represents the end of a user's lockout, any time in the past should be considered
+                not locked out.
+            </summary>
+            <param name="user"></param>
+            <returns></returns>
+        </member>
+        <member name="M:Microsoft.AspNet.Identity.EntityFramework.UserStore`6.SetLockoutEndDateAsync(`0,System.DateTimeOffset)">
+            <summary>
+                Locks a user out until the specified end date (set to a past date, to unlock a user)
+            </summary>
+            <param name="user"></param>
+            <param name="lockoutEnd"></param>
+            <returns></returns>
+        </member>
+        <member name="M:Microsoft.AspNet.Identity.EntityFramework.UserStore`6.IncrementAccessFailedCountAsync(`0)">
+            <summary>
+                Used to record when an attempt to access the user has failed
+            </summary>
+            <param name="user"></param>
+            <returns></returns>
+        </member>
+        <member name="M:Microsoft.AspNet.Identity.EntityFramework.UserStore`6.ResetAccessFailedCountAsync(`0)">
+            <summary>
+                Used to reset the account access count, typically after the account is successfully accessed
+            </summary>
+            <param name="user"></param>
+            <returns></returns>
+        </member>
+        <member name="M:Microsoft.AspNet.Identity.EntityFramework.UserStore`6.GetAccessFailedCountAsync(`0)">
+            <summary>
+                Returns the current number of failed access attempts.  This number usually will be reset whenever the password is
+                verified or the account is locked out.
+            </summary>
+            <param name="user"></param>
+            <returns></returns>
+        </member>
+        <member name="M:Microsoft.AspNet.Identity.EntityFramework.UserStore`6.GetLockoutEnabledAsync(`0)">
+            <summary>
+                Returns whether the user can be locked out.
+            </summary>
+            <param name="user"></param>
+            <returns></returns>
+        </member>
+        <member name="M:Microsoft.AspNet.Identity.EntityFramework.UserStore`6.SetLockoutEnabledAsync(`0,System.Boolean)">
+            <summary>
+                Sets whether the user can be locked out.
+            </summary>
+            <param name="user"></param>
+            <param name="enabled"></param>
+            <returns></returns>
+        </member>
+        <member name="M:Microsoft.AspNet.Identity.EntityFramework.UserStore`6.FindByIdAsync(`2)">
+            <summary>
+                Find a user by id
+            </summary>
+            <param name="userId"></param>
+            <returns></returns>
+        </member>
+        <member name="M:Microsoft.AspNet.Identity.EntityFramework.UserStore`6.FindByNameAsync(System.String)">
+            <summary>
+                Find a user by name
+            </summary>
+            <param name="userName"></param>
+            <returns></returns>
+        </member>
+        <member name="M:Microsoft.AspNet.Identity.EntityFramework.UserStore`6.CreateAsync(`0)">
+            <summary>
+                Insert an entity
+            </summary>
+            <param name="user"></param>
+        </member>
+        <member name="M:Microsoft.AspNet.Identity.EntityFramework.UserStore`6.DeleteAsync(`0)">
+            <summary>
+                Mark an entity for deletion
+            </summary>
+            <param name="user"></param>
+        </member>
+        <member name="M:Microsoft.AspNet.Identity.EntityFramework.UserStore`6.UpdateAsync(`0)">
+            <summary>
+                Update an entity
+            </summary>
+            <param name="user"></param>
+        </member>
+        <member name="M:Microsoft.AspNet.Identity.EntityFramework.UserStore`6.Dispose">
+            <summary>
+                Dispose the store
+            </summary>
+        </member>
+        <member name="M:Microsoft.AspNet.Identity.EntityFramework.UserStore`6.FindAsync(Microsoft.AspNet.Identity.UserLoginInfo)">
+            <summary>
+                Returns the user associated with this login
+            </summary>
+            <returns></returns>
+        </member>
+        <member name="M:Microsoft.AspNet.Identity.EntityFramework.UserStore`6.AddLoginAsync(`0,Microsoft.AspNet.Identity.UserLoginInfo)">
+            <summary>
+                Add a login to the user
+            </summary>
+            <param name="user"></param>
+            <param name="login"></param>
+            <returns></returns>
+        </member>
+        <member name="M:Microsoft.AspNet.Identity.EntityFramework.UserStore`6.RemoveLoginAsync(`0,Microsoft.AspNet.Identity.UserLoginInfo)">
+            <summary>
+                Remove a login from a user
+            </summary>
+            <param name="user"></param>
+            <param name="login"></param>
+            <returns></returns>
+        </member>
+        <member name="M:Microsoft.AspNet.Identity.EntityFramework.UserStore`6.GetLoginsAsync(`0)">
+            <summary>
+                Get the logins for a user
+            </summary>
+            <param name="user"></param>
+            <returns></returns>
+        </member>
+        <member name="M:Microsoft.AspNet.Identity.EntityFramework.UserStore`6.SetPasswordHashAsync(`0,System.String)">
+            <summary>
+                Set the password hash for a user
+            </summary>
+            <param name="user"></param>
+            <param name="passwordHash"></param>
+            <returns></returns>
+        </member>
+        <member name="M:Microsoft.AspNet.Identity.EntityFramework.UserStore`6.GetPasswordHashAsync(`0)">
+            <summary>
+                Get the password hash for a user
+            </summary>
+            <param name="user"></param>
+            <returns></returns>
+        </member>
+        <member name="M:Microsoft.AspNet.Identity.EntityFramework.UserStore`6.HasPasswordAsync(`0)">
+            <summary>
+                Returns true if the user has a password set
+            </summary>
+            <param name="user"></param>
+            <returns></returns>
+        </member>
+        <member name="M:Microsoft.AspNet.Identity.EntityFramework.UserStore`6.SetPhoneNumberAsync(`0,System.String)">
+            <summary>
+                Set the user's phone number
+            </summary>
+            <param name="user"></param>
+            <param name="phoneNumber"></param>
+            <returns></returns>
+        </member>
+        <member name="M:Microsoft.AspNet.Identity.EntityFramework.UserStore`6.GetPhoneNumberAsync(`0)">
+            <summary>
+                Get a user's phone number
+            </summary>
+            <param name="user"></param>
+            <returns></returns>
+        </member>
+        <member name="M:Microsoft.AspNet.Identity.EntityFramework.UserStore`6.GetPhoneNumberConfirmedAsync(`0)">
+            <summary>
+                Returns whether the user phoneNumber is confirmed
+            </summary>
+            <param name="user"></param>
+            <returns></returns>
+        </member>
+        <member name="M:Microsoft.AspNet.Identity.EntityFramework.UserStore`6.SetPhoneNumberConfirmedAsync(`0,System.Boolean)">
+            <summary>
+                Set PhoneNumberConfirmed on the user
+            </summary>
+            <param name="user"></param>
+            <param name="confirmed"></param>
+            <returns></returns>
+        </member>
+        <member name="M:Microsoft.AspNet.Identity.EntityFramework.UserStore`6.AddToRoleAsync(`0,System.String)">
+            <summary>
+                Add a user to a role
+            </summary>
+            <param name="user"></param>
+            <param name="roleName"></param>
+            <returns></returns>
+        </member>
+        <member name="M:Microsoft.AspNet.Identity.EntityFramework.UserStore`6.RemoveFromRoleAsync(`0,System.String)">
+            <summary>
+                Remove a user from a role
+            </summary>
+            <param name="user"></param>
+            <param name="roleName"></param>
+            <returns></returns>
+        </member>
+        <member name="M:Microsoft.AspNet.Identity.EntityFramework.UserStore`6.GetRolesAsync(`0)">
+            <summary>
+                Get the names of the roles a user is a member of
+            </summary>
+            <param name="user"></param>
+            <returns></returns>
+        </member>
+        <member name="M:Microsoft.AspNet.Identity.EntityFramework.UserStore`6.IsInRoleAsync(`0,System.String)">
+            <summary>
+                Returns true if the user is in the named role
+            </summary>
+            <param name="user"></param>
+            <param name="roleName"></param>
+            <returns></returns>
+        </member>
+        <member name="M:Microsoft.AspNet.Identity.EntityFramework.UserStore`6.SetSecurityStampAsync(`0,System.String)">
+            <summary>
+                Set the security stamp for the user
+            </summary>
+            <param name="user"></param>
+            <param name="stamp"></param>
+            <returns></returns>
+        </member>
+        <member name="M:Microsoft.AspNet.Identity.EntityFramework.UserStore`6.GetSecurityStampAsync(`0)">
+            <summary>
+                Get the security stamp for a user
+            </summary>
+            <param name="user"></param>
+            <returns></returns>
+        </member>
+        <member name="M:Microsoft.AspNet.Identity.EntityFramework.UserStore`6.SetTwoFactorEnabledAsync(`0,System.Boolean)">
+            <summary>
+                Set whether two factor authentication is enabled for the user
+            </summary>
+            <param name="user"></param>
+            <param name="enabled"></param>
+            <returns></returns>
+        </member>
+        <member name="M:Microsoft.AspNet.Identity.EntityFramework.UserStore`6.GetTwoFactorEnabledAsync(`0)">
+            <summary>
+                Gets whether two factor authentication is enabled for the user
+            </summary>
+            <param name="user"></param>
+            <returns></returns>
+        </member>
+        <member name="M:Microsoft.AspNet.Identity.EntityFramework.UserStore`6.GetUserAggregateAsync(System.Linq.Expressions.Expression{System.Func{`0,System.Boolean}})">
+            <summary>
+            Used to attach child entities to the User aggregate, i.e. Roles, Logins, and Claims
+            </summary>
+            <param name="filter"></param>
+            <returns></returns>
+        </member>
+        <member name="M:Microsoft.AspNet.Identity.EntityFramework.UserStore`6.Dispose(System.Boolean)">
+            <summary>
+                If disposing, calls dispose on the Context.  Always nulls out the Context
+            </summary>
+            <param name="disposing"></param>
+        </member>
+        <member name="P:Microsoft.AspNet.Identity.EntityFramework.UserStore`6.Context">
+            <summary>
+                Context for the store
+            </summary>
+        </member>
+        <member name="P:Microsoft.AspNet.Identity.EntityFramework.UserStore`6.DisposeContext">
+            <summary>
+                If true will call dispose on the DbContext during Dispose
+            </summary>
+        </member>
+        <member name="P:Microsoft.AspNet.Identity.EntityFramework.UserStore`6.AutoSaveChanges">
+            <summary>
+                If true will call SaveChanges after Create/Update/Delete
+            </summary>
+        </member>
+        <member name="P:Microsoft.AspNet.Identity.EntityFramework.UserStore`6.Users">
+            <summary>
+                Returns an IQueryable of users
+            </summary>
+        </member>
+        <member name="M:Microsoft.AspNet.Identity.EntityFramework.UserStore`1.#ctor">
+            <summary>
+                Default constuctor which uses a new instance of a default EntityyDbContext
+            </summary>
+        </member>
+        <member name="M:Microsoft.AspNet.Identity.EntityFramework.UserStore`1.#ctor(System.Data.Entity.DbContext)">
+            <summary>
+                Constructor
+            </summary>
+            <param name="context"></param>
+        </member>
+        <member name="T:Microsoft.AspNet.Identity.EntityFramework.IdentityUserRole">
+            <summary>
+                EntityType that represents a user belonging to a role
+            </summary>
+        </member>
+        <member name="T:Microsoft.AspNet.Identity.EntityFramework.IdentityUserRole`1">
+            <summary>
+                EntityType that represents a user belonging to a role
+            </summary>
+            <typeparam name="TKey"></typeparam>
+        </member>
+        <member name="P:Microsoft.AspNet.Identity.EntityFramework.IdentityUserRole`1.UserId">
+            <summary>
+                UserId for the user that is in the role
+            </summary>
+        </member>
+        <member name="P:Microsoft.AspNet.Identity.EntityFramework.IdentityUserRole`1.RoleId">
+            <summary>
+                RoleId for the role
+            </summary>
+        </member>
+        <member name="T:Microsoft.AspNet.Identity.EntityFramework.EntityStore`1">
+            <summary>
+                EntityFramework based IIdentityEntityStore that allows query/manipulation of a TEntity set
+            </summary>
+            <typeparam name="TEntity">Concrete entity type, i.e .User</typeparam>
+        </member>
+        <member name="M:Microsoft.AspNet.Identity.EntityFramework.EntityStore`1.#ctor(System.Data.Entity.DbContext)">
+            <summary>
+                Constructor that takes a Context
+            </summary>
+            <param name="context"></param>
+        </member>
+        <member name="M:Microsoft.AspNet.Identity.EntityFramework.EntityStore`1.GetByIdAsync(System.Object)">
+            <summary>
+                FindAsync an entity by ID
+            </summary>
+            <param name="id"></param>
+            <returns></returns>
+        </member>
+        <member name="M:Microsoft.AspNet.Identity.EntityFramework.EntityStore`1.Create(`0)">
+            <summary>
+                Insert an entity
+            </summary>
+            <param name="entity"></param>
+        </member>
+        <member name="M:Microsoft.AspNet.Identity.EntityFramework.EntityStore`1.Delete(`0)">
+            <summary>
+                Mark an entity for deletion
+            </summary>
+            <param name="entity"></param>
+        </member>
+        <member name="M:Microsoft.AspNet.Identity.EntityFramework.EntityStore`1.Update(`0)">
+            <summary>
+                Update an entity
+            </summary>
+            <param name="entity"></param>
+        </member>
+        <member name="P:Microsoft.AspNet.Identity.EntityFramework.EntityStore`1.Context">
+            <summary>
+                Context for the store
+            </summary>
+        </member>
+        <member name="P:Microsoft.AspNet.Identity.EntityFramework.EntityStore`1.EntitySet">
+            <summary>
+                Used to query the entities
+            </summary>
+        </member>
+        <member name="P:Microsoft.AspNet.Identity.EntityFramework.EntityStore`1.DbEntitySet">
+            <summary>
+                EntitySet for this store
+            </summary>
+        </member>
+        <member name="T:Microsoft.AspNet.Identity.EntityFramework.IdentityDbContext">
+            <summary>
+            Default IdentityDbContext that uses the default entity types for ASP.NET Identity Users, Roles, Claims, Logins. 
+            Use this overload to add your own entity types.
+            </summary>
+        </member>
+        <member name="T:Microsoft.AspNet.Identity.EntityFramework.IdentityDbContext`6">
+            <summary>
+            Generic IdentityDbContext base that can be customized with entity types that extend from the base IdentityUserXXX types.
+            </summary>
+            <typeparam name="TUser"></typeparam>
+            <typeparam name="TRole"></typeparam>
+            <typeparam name="TKey"></typeparam>
+            <typeparam name="TUserLogin"></typeparam>
+            <typeparam name="TUserRole"></typeparam>
+            <typeparam name="TUserClaim"></typeparam>
+        </member>
+        <member name="M:Microsoft.AspNet.Identity.EntityFramework.IdentityDbContext`6.#ctor">
+            <summary>
+                Default constructor which uses the "DefaultConnection" connectionString
+            </summary>
+        </member>
+        <member name="M:Microsoft.AspNet.Identity.EntityFramework.IdentityDbContext`6.#ctor(System.String)">
+            <summary>
+                Constructor which takes the connection string to use
+            </summary>
+            <param name="nameOrConnectionString"></param>
+        </member>
+        <member name="M:Microsoft.AspNet.Identity.EntityFramework.IdentityDbContext`6.#ctor(System.Data.Common.DbConnection,System.Data.Entity.Infrastructure.DbCompiledModel,System.Boolean)">
+            <summary>
+                Constructs a new context instance using the existing connection to connect to a database, and initializes it from
+                the given model.  The connection will not be disposed when the context is disposed if contextOwnsConnection is
+                false.
+            </summary>
+            <param name="existingConnection">An existing connection to use for the new context.</param>
+            <param name="model">The model that will back this context.</param>
+            <param name="contextOwnsConnection">
+                Constructs a new context instance using the existing connection to connect to a
+                database, and initializes it from the given model.  The connection will not be disposed when the context is
+                disposed if contextOwnsConnection is false.
+            </param>
+        </member>
+        <member name="M:Microsoft.AspNet.Identity.EntityFramework.IdentityDbContext`6.#ctor(System.Data.Entity.Infrastructure.DbCompiledModel)">
+            <summary>
+                Constructs a new context instance using conventions to create the name of
+                the database to which a connection will be made, and initializes it from
+                the given model.  The by-convention name is the full name (namespace + class
+                name) of the derived context class.  See the class remarks for how this is
+                used to create a connection.
+            </summary>
+            <param name="model">The model that will back this context.</param>
+        </member>
+        <member name="M:Microsoft.AspNet.Identity.EntityFramework.IdentityDbContext`6.#ctor(System.Data.Common.DbConnection,System.Boolean)">
+            <summary>
+                Constructs a new context instance using the existing connection to connect
+                to a database.  The connection will not be disposed when the context is disposed
+                if contextOwnsConnection is false.
+            </summary>
+            <param name="existingConnection">An existing connection to use for the new context.</param>
+            <param name="contextOwnsConnection">If set to true the connection is disposed when the context is disposed, otherwise
+                the caller must dispose the connection.
+            </param>
+        </member>
+        <member name="M:Microsoft.AspNet.Identity.EntityFramework.IdentityDbContext`6.#ctor(System.String,System.Data.Entity.Infrastructure.DbCompiledModel)">
+            <summary>
+                Constructs a new context instance using the given string as the name or connection
+                string for the database to which a connection will be made, and initializes
+                it from the given model.  See the class remarks for how this is used to create
+                a connection.
+            </summary>
+            <param name="nameOrConnectionString">Either the database name or a connection string.</param>
+            <param name="model">The model that will back this context.</param>
+        </member>
+        <member name="M:Microsoft.AspNet.Identity.EntityFramework.IdentityDbContext`6.OnModelCreating(System.Data.Entity.DbModelBuilder)">
+            <summary>
+                Maps table names, and sets up relationships between the various user entities
+            </summary>
+            <param name="modelBuilder"></param>
+        </member>
+        <member name="M:Microsoft.AspNet.Identity.EntityFramework.IdentityDbContext`6.ValidateEntity(System.Data.Entity.Infrastructure.DbEntityEntry,System.Collections.Generic.IDictionary{System.Object,System.Object})">
+            <summary>
+                Validates that UserNames are unique and case insenstive
+            </summary>
+            <param name="entityEntry"></param>
+            <param name="items"></param>
+            <returns></returns>
+        </member>
+        <member name="P:Microsoft.AspNet.Identity.EntityFramework.IdentityDbContext`6.Users">
+            <summary>
+                IDbSet of Users
+            </summary>
+        </member>
+        <member name="P:Microsoft.AspNet.Identity.EntityFramework.IdentityDbContext`6.Roles">
+            <summary>
+                IDbSet of Roles
+            </summary>
+        </member>
+        <member name="P:Microsoft.AspNet.Identity.EntityFramework.IdentityDbContext`6.RequireUniqueEmail">
+            <summary>
+                If true validates that emails are unique
+            </summary>
+        </member>
+        <member name="M:Microsoft.AspNet.Identity.EntityFramework.IdentityDbContext.#ctor">
+            <summary>
+                Default constructor which uses the DefaultConnection
+            </summary>
+        </member>
+        <member name="M:Microsoft.AspNet.Identity.EntityFramework.IdentityDbContext.#ctor(System.String)">
+            <summary>
+                Constructor which takes the connection string to use
+            </summary>
+            <param name="nameOrConnectionString"></param>
+        </member>
+        <member name="M:Microsoft.AspNet.Identity.EntityFramework.IdentityDbContext.#ctor(System.Data.Common.DbConnection,System.Data.Entity.Infrastructure.DbCompiledModel,System.Boolean)">
+            <summary>
+                Constructs a new context instance using the existing connection to connect to a database, and initializes it from
+                the given model.  The connection will not be disposed when the context is disposed if contextOwnsConnection is
+                false.
+            </summary>
+            <param name="existingConnection">An existing connection to use for the new context.</param>
+            <param name="model">The model that will back this context.</param>
+            <param name="contextOwnsConnection">
+                Constructs a new context instance using the existing connection to connect to a
+                database, and initializes it from the given model.  The connection will not be disposed when the context is
+                disposed if contextOwnsConnection is false.
+            </param>
+        </member>
+        <member name="M:Microsoft.AspNet.Identity.EntityFramework.IdentityDbContext.#ctor(System.Data.Entity.Infrastructure.DbCompiledModel)">
+            <summary>
+                Constructs a new context instance using conventions to create the name of
+                the database to which a connection will be made, and initializes it from
+                the given model.  The by-convention name is the full name (namespace + class
+                name) of the derived context class.  See the class remarks for how this is
+                used to create a connection.
+            </summary>
+            <param name="model">The model that will back this context.</param>
+        </member>
+        <member name="M:Microsoft.AspNet.Identity.EntityFramework.IdentityDbContext.#ctor(System.Data.Common.DbConnection,System.Boolean)">
+            <summary>
+                Constructs a new context instance using the existing connection to connect
+                to a database.  The connection will not be disposed when the context is disposed
+                if contextOwnsConnection is false.
+            </summary>
+            <param name="existingConnection">An existing connection to use for the new context.</param>
+            <param name="contextOwnsConnection">If set to true the connection is disposed when the context is disposed, otherwise
+                the caller must dispose the connection.
+            </param>
+        </member>
+        <member name="M:Microsoft.AspNet.Identity.EntityFramework.IdentityDbContext.#ctor(System.String,System.Data.Entity.Infrastructure.DbCompiledModel)">
+            <summary>
+                Constructs a new context instance using the given string as the name or connection
+                string for the database to which a connection will be made, and initializes
+                it from the given model.  See the class remarks for how this is used to create
+                a connection.
+            </summary>
+            <param name="nameOrConnectionString">Either the database name or a connection string.</param>
+            <param name="model">The model that will back this context.</param>
+        </member>
+        <member name="T:Microsoft.AspNet.Identity.EntityFramework.IdentityDbContext`1">
+            <summary>
+                DbContext which uses a custom user entity with a string primary key
+            </summary>
+            <typeparam name="TUser"></typeparam>
+        </member>
+        <member name="M:Microsoft.AspNet.Identity.EntityFramework.IdentityDbContext`1.#ctor">
+            <summary>
+                Default constructor which uses the DefaultConnection
+            </summary>
+        </member>
+        <member name="M:Microsoft.AspNet.Identity.EntityFramework.IdentityDbContext`1.#ctor(System.String)">
+            <summary>
+                Constructor which takes the connection string to use
+            </summary>
+            <param name="nameOrConnectionString"></param>
+        </member>
+        <member name="M:Microsoft.AspNet.Identity.EntityFramework.IdentityDbContext`1.#ctor(System.String,System.Boolean)">
+            <summary>
+                Constructor which takes the connection string to use
+            </summary>
+            <param name="nameOrConnectionString"></param>
+            <param name="throwIfV1Schema">Will throw an exception if the schema matches that of Identity 1.0.0</param>
+        </member>
+        <member name="M:Microsoft.AspNet.Identity.EntityFramework.IdentityDbContext`1.#ctor(System.Data.Common.DbConnection,System.Data.Entity.Infrastructure.DbCompiledModel,System.Boolean)">
+            <summary>
+                Constructs a new context instance using the existing connection to connect to a database, and initializes it from
+                the given model.  The connection will not be disposed when the context is disposed if contextOwnsConnection is
+                false.
+            </summary>
+            <param name="existingConnection">An existing connection to use for the new context.</param>
+            <param name="model">The model that will back this context.</param>
+            <param name="contextOwnsConnection">
+                Constructs a new context instance using the existing connection to connect to a
+                database, and initializes it from the given model.  The connection will not be disposed when the context is
+                disposed if contextOwnsConnection is false.
+            </param>
+        </member>
+        <member name="M:Microsoft.AspNet.Identity.EntityFramework.IdentityDbContext`1.#ctor(System.Data.Entity.Infrastructure.DbCompiledModel)">
+            <summary>
+                Constructs a new context instance using conventions to create the name of
+                the database to which a connection will be made, and initializes it from
+                the given model.  The by-convention name is the full name (namespace + class
+                name) of the derived context class.  See the class remarks for how this is
+                used to create a connection.
+            </summary>
+            <param name="model">The model that will back this context.</param>
+        </member>
+        <member name="M:Microsoft.AspNet.Identity.EntityFramework.IdentityDbContext`1.#ctor(System.Data.Common.DbConnection,System.Boolean)">
+            <summary>
+                Constructs a new context instance using the existing connection to connect
+                to a database.  The connection will not be disposed when the context is disposed
+                if contextOwnsConnection is false.
+            </summary>
+            <param name="existingConnection">An existing connection to use for the new context.</param>
+            <param name="contextOwnsConnection">If set to true the connection is disposed when the context is disposed, otherwise
+                the caller must dispose the connection.
+            </param>
+        </member>
+        <member name="M:Microsoft.AspNet.Identity.EntityFramework.IdentityDbContext`1.#ctor(System.String,System.Data.Entity.Infrastructure.DbCompiledModel)">
+            <summary>
+                Constructs a new context instance using the given string as the name or connection
+                string for the database to which a connection will be made, and initializes
+                it from the given model.  See the class remarks for how this is used to create
+                a connection.
+            </summary>
+            <param name="nameOrConnectionString">Either the database name or a connection string.</param>
+            <param name="model">The model that will back this context.</param>
+        </member>
+        <member name="T:Microsoft.AspNet.Identity.EntityFramework.IdentityResources">
+            <summary>
+              A strongly-typed resource class, for looking up localized strings, etc.
+            </summary>
+        </member>
+        <member name="P:Microsoft.AspNet.Identity.EntityFramework.IdentityResources.ResourceManager">
+            <summary>
+              Returns the cached ResourceManager instance used by this class.
+            </summary>
+        </member>
+        <member name="P:Microsoft.AspNet.Identity.EntityFramework.IdentityResources.Culture">
+            <summary>
+              Overrides the current thread's CurrentUICulture property for all
+              resource lookups using this strongly typed resource class.
+            </summary>
+        </member>
+        <member name="P:Microsoft.AspNet.Identity.EntityFramework.IdentityResources.DbValidationFailed">
+            <summary>
+              Looks up a localized string similar to Database Validation failed..
+            </summary>
+        </member>
+        <member name="P:Microsoft.AspNet.Identity.EntityFramework.IdentityResources.DuplicateEmail">
+            <summary>
+              Looks up a localized string similar to Email {0} is already taken..
+            </summary>
+        </member>
+        <member name="P:Microsoft.AspNet.Identity.EntityFramework.IdentityResources.DuplicateUserName">
+            <summary>
+              Looks up a localized string similar to User name {0} is already taken..
+            </summary>
+        </member>
+        <member name="P:Microsoft.AspNet.Identity.EntityFramework.IdentityResources.EntityFailedValidation">
+            <summary>
+              Looks up a localized string similar to Entity Type {0} failed validation..
+            </summary>
+        </member>
+        <member name="P:Microsoft.AspNet.Identity.EntityFramework.IdentityResources.ExternalLoginExists">
+            <summary>
+              Looks up a localized string similar to A user with that external login already exists..
+            </summary>
+        </member>
+        <member name="P:Microsoft.AspNet.Identity.EntityFramework.IdentityResources.IdentityV1SchemaError">
+            <summary>
+              Looks up a localized string similar to The model backing the &apos;ApplicationDbContext&apos; context has changed since the database was created. This could have happened because the model used by ASP.NET Identity Framework has changed or the model being used in your application has changed. To resolve this issue, you need to update your database. Consider using Code First Migrations to update the database (http://go.microsoft.com/fwlink/?LinkId=301867).  Before you update your database using Code First Migrations, please disable the schema consistency ch [rest of string was truncated]&quot;;.
+            </summary>
+        </member>
+        <member name="P:Microsoft.AspNet.Identity.EntityFramework.IdentityResources.IncorrectType">
+            <summary>
+              Looks up a localized string similar to Incorrect type, expected type of {0}..
+            </summary>
+        </member>
+        <member name="P:Microsoft.AspNet.Identity.EntityFramework.IdentityResources.PropertyCannotBeEmpty">
+            <summary>
+              Looks up a localized string similar to {0} cannot be null or empty..
+            </summary>
+        </member>
+        <member name="P:Microsoft.AspNet.Identity.EntityFramework.IdentityResources.RoleAlreadyExists">
+            <summary>
+              Looks up a localized string similar to Role {0} already exists..
+            </summary>
+        </member>
+        <member name="P:Microsoft.AspNet.Identity.EntityFramework.IdentityResources.RoleIsNotEmpty">
+            <summary>
+              Looks up a localized string similar to Role is not empty..
+            </summary>
+        </member>
+        <member name="P:Microsoft.AspNet.Identity.EntityFramework.IdentityResources.RoleNotFound">
+            <summary>
+              Looks up a localized string similar to Role {0} does not exist..
+            </summary>
+        </member>
+        <member name="P:Microsoft.AspNet.Identity.EntityFramework.IdentityResources.UserAlreadyInRole">
+            <summary>
+              Looks up a localized string similar to User already in role..
+            </summary>
+        </member>
+        <member name="P:Microsoft.AspNet.Identity.EntityFramework.IdentityResources.UserIdNotFound">
+            <summary>
+              Looks up a localized string similar to The UserId cannot be found..
+            </summary>
+        </member>
+        <member name="P:Microsoft.AspNet.Identity.EntityFramework.IdentityResources.UserLoginAlreadyExists">
+            <summary>
+              Looks up a localized string similar to UserLogin already exists for loginProvider: {0} with providerKey: {1}.
+            </summary>
+        </member>
+        <member name="P:Microsoft.AspNet.Identity.EntityFramework.IdentityResources.UserNameNotFound">
+            <summary>
+              Looks up a localized string similar to User {0} does not exist..
+            </summary>
+        </member>
+        <member name="P:Microsoft.AspNet.Identity.EntityFramework.IdentityResources.UserNotInRole">
+            <summary>
+              Looks up a localized string similar to User is not in role..
+            </summary>
+        </member>
+        <member name="P:Microsoft.AspNet.Identity.EntityFramework.IdentityResources.ValueCannotBeNullOrEmpty">
+            <summary>
+              Looks up a localized string similar to Value cannot be null or empty..
+            </summary>
+        </member>
+        <member name="T:Microsoft.AspNet.Identity.EntityFramework.IdentityRole">
+            <summary>
+                Represents a Role entity
+            </summary>
+        </member>
+        <member name="T:Microsoft.AspNet.Identity.EntityFramework.IdentityRole`2">
+            <summary>
+                Represents a Role entity
+            </summary>
+            <typeparam name="TKey"></typeparam>
+            <typeparam name="TUserRole"></typeparam>
+        </member>
+        <member name="M:Microsoft.AspNet.Identity.EntityFramework.IdentityRole`2.#ctor">
+            <summary>
+                Constructor
+            </summary>
+        </member>
+        <member name="P:Microsoft.AspNet.Identity.EntityFramework.IdentityRole`2.Users">
+            <summary>
+                Navigation property for users in the role
+            </summary>
+        </member>
+        <member name="P:Microsoft.AspNet.Identity.EntityFramework.IdentityRole`2.Id">
+            <summary>
+                Role id
+            </summary>
+        </member>
+        <member name="P:Microsoft.AspNet.Identity.EntityFramework.IdentityRole`2.Name">
+            <summary>
+                Role name
+            </summary>
+        </member>
+        <member name="M:Microsoft.AspNet.Identity.EntityFramework.IdentityRole.#ctor">
+            <summary>
+                Constructor
+            </summary>
+        </member>
+        <member name="M:Microsoft.AspNet.Identity.EntityFramework.IdentityRole.#ctor(System.String)">
+            <summary>
+                Constructor
+            </summary>
+            <param name="roleName"></param>
+        </member>
+        <member name="T:Microsoft.AspNet.Identity.EntityFramework.IdentityUser">
+            <summary>
+                Default EntityFramework IUser implementation
+            </summary>
+        </member>
+        <member name="T:Microsoft.AspNet.Identity.EntityFramework.IdentityUser`4">
+            <summary>
+                Default EntityFramework IUser implementation
+            </summary>
+            <typeparam name="TKey"></typeparam>
+            <typeparam name="TLogin"></typeparam>
+            <typeparam name="TRole"></typeparam>
+            <typeparam name="TClaim"></typeparam>
+        </member>
+        <member name="M:Microsoft.AspNet.Identity.EntityFramework.IdentityUser`4.#ctor">
+            <summary>
+                Constructor
+            </summary>
+        </member>
+        <member name="P:Microsoft.AspNet.Identity.EntityFramework.IdentityUser`4.Email">
+            <summary>
+                Email
+            </summary>
+        </member>
+        <member name="P:Microsoft.AspNet.Identity.EntityFramework.IdentityUser`4.EmailConfirmed">
+            <summary>
+                True if the email is confirmed, default is false
+            </summary>
+        </member>
+        <member name="P:Microsoft.AspNet.Identity.EntityFramework.IdentityUser`4.PasswordHash">
+            <summary>
+                The salted/hashed form of the user password
+            </summary>
+        </member>
+        <member name="P:Microsoft.AspNet.Identity.EntityFramework.IdentityUser`4.SecurityStamp">
+            <summary>
+                A random value that should change whenever a users credentials have changed (password changed, login removed)
+            </summary>
+        </member>
+        <member name="P:Microsoft.AspNet.Identity.EntityFramework.IdentityUser`4.PhoneNumber">
+            <summary>
+                PhoneNumber for the user
+            </summary>
+        </member>
+        <member name="P:Microsoft.AspNet.Identity.EntityFramework.IdentityUser`4.PhoneNumberConfirmed">
+            <summary>
+                True if the phone number is confirmed, default is false
+            </summary>
+        </member>
+        <member name="P:Microsoft.AspNet.Identity.EntityFramework.IdentityUser`4.TwoFactorEnabled">
+            <summary>
+                Is two factor enabled for the user
+            </summary>
+        </member>
+        <member name="P:Microsoft.AspNet.Identity.EntityFramework.IdentityUser`4.LockoutEndDateUtc">
+            <summary>
+                DateTime in UTC when lockout ends, any time in the past is considered not locked out.
+            </summary>
+        </member>
+        <member name="P:Microsoft.AspNet.Identity.EntityFramework.IdentityUser`4.LockoutEnabled">
+            <summary>
+                Is lockout enabled for this user
+            </summary>
+        </member>
+        <member name="P:Microsoft.AspNet.Identity.EntityFramework.IdentityUser`4.AccessFailedCount">
+            <summary>
+                Used to record failures for the purposes of lockout
+            </summary>
+        </member>
+        <member name="P:Microsoft.AspNet.Identity.EntityFramework.IdentityUser`4.Roles">
+            <summary>
+                Navigation property for user roles
+            </summary>
+        </member>
+        <member name="P:Microsoft.AspNet.Identity.EntityFramework.IdentityUser`4.Claims">
+            <summary>
+                Navigation property for user claims
+            </summary>
+        </member>
+        <member name="P:Microsoft.AspNet.Identity.EntityFramework.IdentityUser`4.Logins">
+            <summary>
+                Navigation property for user logins
+            </summary>
+        </member>
+        <member name="P:Microsoft.AspNet.Identity.EntityFramework.IdentityUser`4.Id">
+            <summary>
+                User ID (Primary Key)
+            </summary>
+        </member>
+        <member name="P:Microsoft.AspNet.Identity.EntityFramework.IdentityUser`4.UserName">
+            <summary>
+                User name
+            </summary>
+        </member>
+        <member name="M:Microsoft.AspNet.Identity.EntityFramework.IdentityUser.#ctor">
+            <summary>
+                Constructor which creates a new Guid for the Id
+            </summary>
+        </member>
+        <member name="M:Microsoft.AspNet.Identity.EntityFramework.IdentityUser.#ctor(System.String)">
+            <summary>
+                Constructor that takes a userName
+            </summary>
+            <param name="userName"></param>
+        </member>
+        <member name="T:Microsoft.AspNet.Identity.EntityFramework.IdentityUserClaim">
+            <summary>
+                EntityType that represents one specific user claim
+            </summary>
+        </member>
+        <member name="T:Microsoft.AspNet.Identity.EntityFramework.IdentityUserClaim`1">
+            <summary>
+                EntityType that represents one specific user claim
+            </summary>
+            <typeparam name="TKey"></typeparam>
+        </member>
+        <member name="P:Microsoft.AspNet.Identity.EntityFramework.IdentityUserClaim`1.Id">
+            <summary>
+                Primary key
+            </summary>
+        </member>
+        <member name="P:Microsoft.AspNet.Identity.EntityFramework.IdentityUserClaim`1.UserId">
+            <summary>
+                User Id for the user who owns this login
+            </summary>
+        </member>
+        <member name="P:Microsoft.AspNet.Identity.EntityFramework.IdentityUserClaim`1.ClaimType">
+            <summary>
+                Claim type
+            </summary>
+        </member>
+        <member name="P:Microsoft.AspNet.Identity.EntityFramework.IdentityUserClaim`1.ClaimValue">
+            <summary>
+                Claim value
+            </summary>
+        </member>
+        <member name="T:Microsoft.AspNet.Identity.EntityFramework.IdentityUserLogin">
+            <summary>
+                Entity type for a user's login (i.e. facebook, google)
+            </summary>
+        </member>
+        <member name="T:Microsoft.AspNet.Identity.EntityFramework.IdentityUserLogin`1">
+            <summary>
+                Entity type for a user's login (i.e. facebook, google)
+            </summary>
+            <typeparam name="TKey"></typeparam>
+        </member>
+        <member name="P:Microsoft.AspNet.Identity.EntityFramework.IdentityUserLogin`1.LoginProvider">
+            <summary>
+                The login provider for the login (i.e. facebook, google)
+            </summary>
+        </member>
+        <member name="P:Microsoft.AspNet.Identity.EntityFramework.IdentityUserLogin`1.ProviderKey">
+            <summary>
+                Key representing the login for the provider
+            </summary>
+        </member>
+        <member name="P:Microsoft.AspNet.Identity.EntityFramework.IdentityUserLogin`1.UserId">
+            <summary>
+                User Id for the user who owns this login
+            </summary>
+        </member>
+    </members>
+</doc>
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               MZê       ˇˇ  ∏       @                                   Ä   ∫ ¥	Õ!∏LÕ!This program cannot be run in DOS mode.
+$       PE  L M˛˛[        ‡ " 0  r         ë       †                           ‡     ”`  `Ö                           ¥ê  O    †  »           |  ∏#   ¿     |è                                                               H           .text   q       r                    `.rsrc   »   †      t              @  @.reloc      ¿      z              @  B                Ëê      H      6  ƒR  	       ƒà  8  ¸é  Ä                                   r(  
+-r  ps  
+z(  *{  *"}  *:(  o  
+*6(  o  
+*V(  
+(  (
+  *{  *"}  *{  *"}  *(   
+*(  
+*ﬁ~  ,*Ä  r  p–  (!  
+("  
+r!  p–  (!  
+("  
+* 0 '     ~
+  
+(#  
+t  
+  (  +
+3‡* 0 '     ~
+  
+(%  
+t  
+  (  +
+3‡*"(  *"(  *   0 '     ~  
+(#  
+t#    (  +
+3‡* 0 '     ~  
+(%  
+t#    (  +
+3‡*"(  *"(  *   0 '     ~  
+(#  
+t    (  +
+3‡* 0 '     ~  
+(%  
+t    (  +
+3‡* 0 )     {  
+(#  
+t  |  (  +
+3ﬂ*   0 )     {  
+(%  
+t  |  (  +
+3ﬂ*   0 )     {  
+(#  
+t#  |  (  +
+3ﬂ*   0 )     {  
+(%  
+t#  |  (  +
+3ﬂ*n{  -o-  }  {  *"}  *n{  ,{  (&  
+*('  
+*((  
+*  0      {	  u  
+,o  **{	  *6(2  {  *"}  * 0 i     (2  (  o)  
+o*  
+(+  
+
+~  (,  
+˛(-  
+_-.(  oU  ,!(4  s.  
+Ä  ﬁ&s.  
+Ä  ﬁ *       F Y (  û{  -('  
+s/  
+}  {  o0  
+&*ˆo1  
+(2  
+r1  pç  %(  o3  
+¢%(  o4  
+¢(5  
+o6  
+*6s  o+  *0 L       (0  (%  o  (7  
+r1  pç  %(  o3  
+¢%(  o4  
+¢(5  
+o  *(8  
+*0 "     o.  
+("  s  o/  o	  *2("  (8  * 0      ~  
+,o9  
+*  0 #     }	  {  %-&~  
+,o:  
+* 0 7   	  {  %-&~
+  
+,#(  oa  (  o\  s;  
+o<  
+* 0 v   
+  {  -m(  s=  
+
+o,  (  o\  o>  
+ﬁ
+,o?  
+‹o@  
+-oA  
+(  +("  (3  zoC  
+}  {  (1  *      4 
+    0 )     oD  
+(E  
+(F  
+oG  
+
+ (H  
+XsI  
+*6oJ  
+oK  
+*(L  
+*"(7  *&(<  *"(9  *˙(M  
+,((2  
+(ä  ç  %rA  p¢(5  
+rA  psN  
+z(@  (<  *&(;  *0 G       -rY  ps  
+z(M  
+,((2  
+(ä  ç  %rA  p¢(5  
+rA  psN  
+z(<  * 0 ë     (A  rg  poO  
+,
+sF  
++o,AoÄ  ,9oÄ  ov  (M  
+-'~  oÄ  ov  ˛=  sP  
+oQ  
+oR  
+%-&sC  o?  
+,oÇ  ,oÇ  (>  *   0 K     ~  oS  
+
+(T  
+,(2  
+(u  ç  %¢(5  
+sU  
+z(V  
+ç]  (  +oX  
+* 0 l     oz  oX  o|  (  +~C  %-&~B  ˛î  sZ  
+%ÄC  (  +o\  
+
++o]  
+o^  
+o_  
+&o`  
+-‰ﬁ
+,o?  
+‹*   A  a 
+    "sN  * sÑ  %~0  (a  
+t  oÅ  %~4  (a  
+t  oÉ  *0 K       (b  
+,
+(c  
+ +8r}  poO  
+,rÅ  p(F  
+ +rÖ  poO  
+-rÖ  p(F  
+ *&(d  
+*Ü(e  
+sf  
+Ä  ˛B  sg  
+Ä  *∂(M  ~  oh  
+(I  oi  
+(V  oj  
+*∫(N  ~  oh  
+(I  oi  
+(V  oj  
+*0 i     (l  ok  
+ol  
+om  
+on  
+ok  
+ol  
+(  +~E  %-&~D  ˛ó  so  
+%ÄE  (	  +(
+  +
+,%or  
+`os  
+*2(t  
+(u  
+*  0 s     ~v  
+/ow  
+ (J   rã  pox  
+
+.rã  p(y  
+Xoz  
+ çn  %/ùo{  
+(  +-rù  p*r•  prØ  p(}  
+(F  
+* 0      /o~  
+
+.	o  
+*~Ä  
+*V–p  (!  
+oÅ  
+Ä  *  0 g    (e  
+sÇ  
+}$  (É  
+o^  
+r≥  po_  
+&o^  
+r¡  po_  
+&o^  
+r˜  po_  
+&o^  
+r po_  
+&o^  
+r# po_  
+&o^  
+r9 po_  
+&o^  
+rO po_  
+&o^  
+ru po_  
+&o^  
+rù po_  
+&o^  
+rπ po_  
+&o^  
+r· po_  
+&r p–q  (!  
+(m  r' p–r  (!  
+(m  rù  poi  
+ ~Ñ  
+~Ö  
+~Ü  
+r= prM p~"  rk prá pr° p(á  
+ r∑ p(à  
+oâ  
+~!  (X  (V  oä  
+*&(N  *   0 s       (L  (M  
+,((2  
+(ä  ç  %rA  p¢(5  
+rA  psN  
+z(b  (]  (a  og  oã  
+oh  oå  
+sç  
+(é  
+oä  
+*n{&  -oh  }&  {&  *"}&  *ñ(è  
+,(è  
+*([  ,(`  *(W  *"(h  
+*Ü{%  -(a  og  }%  {%  *"}%  *{+  *"}+  *{,  *"},  *ä{'  %-&(b  
+-~   *(ê  
+oÅ  
+*"}'  *J(d  |(  (ë  
+*6(k  {)  *"})  *(a  *"(b  *6(d  {*  *{-  *"}-  *˙(M  
+,((2  
+(ä  ç  %r¡ p¢(5  
+r¡ psN  
+z~#  oí  
+&*   0 J     |(  (-  
+-<(a  (t  
+
+{$  oì  
+,s.  
+}(  }*  *s.  
+}(  *sî  
+*   0 +     (ï  
+
+(M  
+,*oñ  
+.3oz  
+
+(j  *ör« pçn  %~ù%/ùoó  
+(F  
+(u  
+*  0 Q     (a  (f  
+-(\  (M  
+-(\  (f  
+-$(2  
+(t  ç  %(a  ¢(5  
+sU  
+z*æ~#  oò  
+~G  %-&~F  ˛ö  sô  
+%ÄG  (  +*(ö  
+*   0 3     {)  -*(b  
+,#(a  (   
+
+(M  
+-(õ  
+,})  * 0 …     (ú  
+où  
+oû  
+(i  ~H  %-&~F  ˛õ  sü  
+%ÄH  (  +(  +o°  
+s¢  
+%r’ po£  
+%(Y  s§  
+o•  
+%o¶  
+%oß  
+% 0  os  
+
+o®  
+(Y  s§  
+r˝ ps©  
+r’ ps©  
+s™  
+s´  
+o¨  
+&ok  
+ol  
+o≠  
+*ä(T  
+,r ps  
+zoÅ  
+(n  *0 n       (M  
+,((2  
+(ä  ç  %r p¢(5  
+r psN  
+z(M  
+,((2  
+(ä  ç  %r1 p¢(5  
+r1 psN  
+z{$  oÆ  
+*  0 G       –  (!  
+oÅ  
+Ä   –Ä  (!  
+oÅ  
+Ä!  –Å  (!  
+oÅ  
+Ä"  sØ  
+Ä#  *Æ~.  -rK p–  (!  
+o∞  
+s±  
+Ä.  ~.  *~/  *Ä/  *V(q  r∑ p~/  o≤  
+*V(q  r p~/  o≤  
+*Ç{2  -~1  (≥  
+tO  *{3  *>}3  }2  *(¥  
+*¬~;  rM p(F  
+Ä0  rY p–O  (!  
+sµ  
+Ä1  *Ç{7  -~5  (≥  
+tO  *{9  *>}9  }7  *Ç{8  -~6  (≥  
+tF  *{:  *>}:  }8  *  0 K       ~;  rq p(F  
+Ä4  r p–O  (!  
+sµ  
+Ä5  rô p–F  (!  
+sµ  
+Ä6  *ñ{<  -(∂  
+rØ po∑  
+t  *{>  *>}>  }<  *ñ{=  -(∂  
+rπ po∑  
+t  *{?  *>}?  }=  *(∏  
+*.r≈ pÄ;  * 0 l     ~@  -_(π  
+o∫  
+~J  %-&~I  ˛û  sª  
+%ÄJ  (  +(  +
+oy  
+
+Yo  
+
+–  (!  
+o∞  
+s±  
+Ä@  ~@  *~A  *ÄA  *V(á  r˘ p~A  o≤  
+*V(á  r; p~A  o≤  
+*V(á  rm p~A  o≤  
+*V(á  rß p~A  o≤  
+*V(á  r· p~A  o≤  
+*V(á  r- p~A  o≤  
+*V(á  ra p~A  o≤  
+*V(á  rß p~A  o≤  
+*.sì  ÄB  *oΩ  
+*.sñ  ÄD  *Fr’ poæ  
+(ø  
+*.sô  ÄF  *"(¿  
+*s¡  
+*.sù  ÄI  *6rÌ po¬  
+*BSJB         v4.0.30319     l   t  #~  ‡  4!  #Strings    >  $  #US 8E     #GUID   HE  |  #Blob         W∂		   ˙3      Ñ      J   û   f      ¬      J            	   (   K                       È      ùƒ  ƒ 4T ∂   %Ï åÏ a• Ò ‰ Ü
+Ï ΩÏ uÏ DÏ aƒ Æ	
+ ª
+Ñ Ï ÷Ï ¿Ï ›Ï ‰ ß Ú †
+ƒ
+ §v
+ Av b  ø q
+” H”
+ Uv
+ }v ˘  í  ”  b ˛
+ 1	v ·h  b s ß) Ä)
+ åÑ ÷y g O
+ Ã  9 ú
+ lı  !  ﬁ ú Ñ) Yú =) 7 ?
+k @ú 9  ﬁ
+ ı
+T ﬁ‰ zâ û ˆ  >
+ 
+ı õ ü
+ Î> ◊ h
+ «ˇ h ›Ï - ] À r) 1ú ¿µ Ú È î œ Û µ ?Ú <Ú Ú Ï Ú ø *ú Á
+ Óı
+ U Ñ
+ Õv \ ú ·  =  4  ˘  Å  ks Çk ” * ŸŸ ‰Ÿ ÔŸ ÀK ñk s l  n  ‚  V  Ê    )  –  ¬ 
+ JÑ úŸ †Ÿ ≠ =     j        +:]     ≤:q     B:]   †   è:    †   Í:    Å a:]     <:i     ( :]  6   ∏:,  E   …:·  L    ı] . p   ‡#0 v   √#4 z   Ü#; Ä    +’] @ Ü ! ò  ] B í ! ò  ] D ï ! ò  ] F ò ! ò  ] I ú  ⁄Í îœ Ó ”Ú Úı E˝ ÏÓ  ¥  
+ q Ó 
+ ò )"  1QÄßœQÄÛœ1 ˜œSÄgœSÄ_œSÄœSÄóœSÄ∑œSÄØœSÄ¡œSÄÔœSÄ⁄œSÄÇœQÄ)œQÄœ3 iœ3 œ3 Xœ Ö;! MD Tœ _M ≥œ  ı .œ œ ±Ú ¯œ îœ /R 
+W6 ›œ1 Ë \ Ú ¶	œ6 ›œ1 “ \1 !\ Ú 7Ú 	œ ôa6 Èœ PÚ FÚ Ïf Ìj /R 
+W6 fn  r6 f} R Å6 få | ê † ü6 f™ - ÆP     Ü∑ m     ÉmΩ u     É~∑ ~     Ê_D  ç     ÊÛ  õ     Ü¬ ±     Ü<‚  π     ÅL  ¬     Ür…	       Ü{Œ	 ”     Êh‘
+ €     Ü        ∆_D        ∆Û        ∆h‘ „     ñ ,Ÿ !    ñ„› P!    ñˇ› É!    ÉèÈ å!    É≥È ò!    ñ8ı Ã!    ñRı ˇ!    É'¸ "    ÉI¸ "    ñ’ H"    ñÁ |"    Å⁄È ¥"    ÅˇÈ Ï"    Ån¸ $#    Åë¸ Y#    Ér… u#    É{Œ ~#    ∆Ù‹  ö#    Ü<‚  §#    Ü†Ω »#    É∑ –#    ÉÙæ ﬁ#    É Ë#    ∆)	 p$    Ü É  ò$    ∆ ƒ  ÷$    ∆ T∑! ‰$    √≈	'" <%    ≈C# D%    ≈î…# r%    ≈Ê…# Ä%    ƒ¡-# †%    Å o'$ –%    Å % &    Å  & ®&    ë ∑3& ›&    ë π=( Î&    Ü ) Û&    ñ ⁄D) ¸&    ñ ⁄J* '    ñ —D, '    ñ —J- N'    ñ —Q/ X'    ñ —Y1 ¨'    ì ÷	Y4 L(    ë  b7 §(    ñ üm8 ,)    ∆îu: 5)    ì ≥|< h)    ë ÜL = ø)    ë  Ç> €     Ü ? …)    ë"Ÿ? Î)    Ü ? *    Ü @ H*    ∆ ,`B Ω*    ƒ ‘C Ã*    ë zL D L+    ë < L E t+    ë"ŸF å+    Å F ˇ,    Ü F -    Ü G ã-    ∆¯ I ß-    ƒÙI ∞-    ∆,‚ J ÷-    ∆A J ﬂ-    ∆*‚ K .    ∆? K 
+.    ÜçL .    Ü© L .    Ü‰‚ M #.    Ü˝ M ,.    ÉÖ‚ N O.    Éú N X.    Ü∏O k.    Ü¸‚ O y.    Ü O Ç.    ∆É‚ P ä.    ∆¢ P ì.    ÅÀ‚ Q °.    Ü<‚ Q ©.    ÅL Q ≤.    ñ MàR Ù.    Å § S J/    ∆ ÉçS T/    ë 'YS ã/    ƒ‘T ¥/    ƒO¯ U 0    ñ ÃìU A0    ë ≈YU L0    Å  V å0    ∆ ,`V a1    Ñ úW Ñ1    Ñ  Y  2    ë"Ÿ[ €     É [ S2    ì⁄£[ 2    ìÔ	-[ Ü2    ì˚	©[ é2    ìQ…\ §2    ìe	…\ ∫2    ÜÜ	‚ \ €2    Üñ	 \ Î2    Ü ] Û2    ë"Ÿ] $3    Ü’‚ ] E3    ÜÊ ] U3    Üg∞^ v3    Üv∂^ Î2    Ü _ à3    ë"Ÿ_ ﬂ3    ÜrΩ_ 4    Ü{¬_ 4    Ü≈»` ;4    ÜœÕ` K4    Ü a S4    ë"Ÿa €     É a `4    ì⁄£a ÿ4    ìÔ	-a ﬂ4    ì˚	©a Á4    ìü …b ˝4    ìz…b 5    ìÿ…b )5    ì;…b ?5    ì…b U5    ì\…b k5    ì.…b Å5    ìx …b ó5    ë"Ÿb €     Ü b £5    É  ”b ´5    ë"Ÿc €     Ü c ∑5    É [ ⁄c …5    ë"Ÿd €     Ü d ’5    É Ü ·d ﬁ5    É ™ Ïe Ê5    ë"Ÿf €     Ü f Ú5    É 6 f    ≈   Ä   O   r   «   \   Ì   Ä   Ä   \   O   r   «   \   Ä   Ä   Ä   Ä   Ä   Ä   Ä   Ä   Ä   Ä   Ä   Ä   Ä   Ä   Ä   Ä   ú   ë   µ   µ   …   µ   F   ·   \   >	   \   \   /   \   \   /   ¯   \   ¯   \   /   ¯   \   /   «   ¯   Ì   \   /   \   \   «   \   \   /   M   \   \   \   \   \   /   Ä   Ä   Ä   Ä   Ä   Ä   Ä   Ä   Ä   W   B   \   ‹   M   B   	   B   K   Ä   Ä   Ä   Ä   Ä   Ä   Ä   W   ≥   ≤   ‚   ‚    	     
+ )  1  9  A  I  Q  Y  a  i  q  Å   â  ë  ô  °  ©  ±  ¡  Ò ' - ˘  ) π  A … _D … Û ·  IhL y ÈQ — &Y Yü{ aòá Y¶{ iÊ” — Ù‹ — <‚ ¡¯ —‚ — m˛  é g i)√"Iº',
+-¡ç‚ ¡*‚ yÎ3qK	=
+-— C ®Z®gy ®ZYçYTîâ`
+ ëVëß†°]´aÙæq˘‚ ©ì…y‰ÕqZ”yYŸi›9êËπ≈ —  yƒ Ó¡ yÑ˙$ , ∑$4 ®< ®Jy I Q— ŸUYŸ}aD °"	îL °˘≤T Û€\ ˛¡∑Ïd √¸	ˇ’IáòL !K	)J
+, < ¡A ¡¢ ¡p ©∏+9d1©E7A¶=l °≥	T°~´QcnQrta©L iL a¡ÖyVày±éypŸy4ñyYõ°Ô•yóµy≠ƒy4…yÃ œy –‚ t ¡ ŸGœŸ0œŸ`œŸ‡Ÿ~ ¡3Ì¡o ¡? ¡Ùô ôØ¡,‚ !S	˚ ]| ¿t t° aúL yZ"y('| {3Ñ —≈Y©›Ó¡,`©^g±´må °{Ñπèò± Q' ¡ ±ª†±  ±, ±ôß—≠·µÈø…√∆A2Õt ’|  y Ø'	›	*ÂÌ !Ù9
+ˇ!9 q—q4î °˚´°^‚ Q‚ yŒú ßÒ y{˙ D È H ˙ P 	 T  X ˙ \ = ` X d _ h n l ã p § t π x ¬ | ’! ´ Ç.  A	.  J	.  i	. # r	. + r	. 3 r	. ; x	. C ~	. K â	. S ü	. [ ¿	. c r	. k ﬂ	. s Q. { é. É ™. ã ﬁ. ì Ô. õ +. £ 8@ ´ ÇA ´ Ç` ´ Ça ´ Ç‡ ´ Ç„ ≥ á ´ Çª ê ´ Ç@´ ÇA´ Ça´ ÇÅ´ ÇÉ√ ôÉÀ ÇÉ´ Ç°´ Ç¡´ Ç√ ôÀ Ç´ Ç ´ Ç#´ Ç@´ ÇC´ Çc´ ÇÉ´ Ç†´ Ç¿´ Ç…≥ i	È≥ i	 ´ Ç@´ ÇI” ⁄`´ Çi” 
+Ä´ Çâ” *†´ Ç©” H¿´ Ç…” `È≥ i		≥ i	a´ ÇÅ´ Ç°´ Ç†
+´ Ç¿
+´ Ç‡
+´ Ç ´ Ç ´ Ç@´ Ç` ü ± Ê Î IPanÅ√Û<ä%{¿“-        ∫   qç   Pç   Ó
+      òç                     ÇÛ  P¯  Á¸  Á¸  ¯	  P¯  §Û  ª	  7	  -		  R	  E¯  C¯  ≠	  ¯  †¯  º	  !¯  ¶¯  œ¯  P¯  ﬁ!	  7
+'	  U-	  i	-	  ö	¯  ˛¯  é1	  Á7	  Á<	  ﬁ!	  7
+'	  £ -	  ~-	  ‹-	  ?-	  -	  `-	  2-	  | -	                               	   
+          	    	   
+   
+  !         "         #   $   %   &   '   O   P   Q   R   S   T   U   V   W   X   Y !  Z !  [ #  \ %  ] %  ^ '  _ '  ` )  a +  b +  q -  r /  s /  t 1  u 3  v 5  w 5  z 7  { 7  | 9  } 9  Ä ;  Å ;  Ç =  É =  á ?  à A  â A  ä C  ã E  å G  ç I  é K  è M  ê O  ë Q 3 < 4A}®‘ÂıJÿ @s$Ä            G:             ,è               5Ñ               ,               >)               5               ,π	               >Ÿ           {  p     ;   	  
+     I î I ´ I … Ö ∏Ø s≥ ¢∑ Õ≥ D· D„ D˘ ±∑ N∑ }Aí· ±y±     <>9__10_0 <ApplyConfigurationToHost>b__10_0 <>9__4_0 <get_ResourceManager>b__4_0 <>9__5_0 <PostProcessGeneratedCode>b__5_0 <>9__66_0 <GetGlobalImports>b__66_0 <>9__69_0 <PostProcessGeneratedCode>b__69_0 Func`1 Nullable`1 IEnumerable`1 Expression`1 EventHandler`1 IEqualityComparer`1 IEnumerator`1 ISet`1 IList`1 Func`2 KeyValuePair`2 ConcurrentDictionary`2 <>9 <Module> System.IO Lambda System.Web mscorlib <>c System.Collections.Generic GetOrAdd TryAdd Interlocked _startWasCalled add_CodeGenerationCompleted remove_CodeGenerationCompleted OnCodeGenerationCompleted add_CodeGenerationStarted remove_CodeGenerationStarted OnCodeGenerationStarted get_IsHosted <VirtualPath>k__BackingField <DefaultDebugCompilation>k__BackingField <InnerBuilder>k__BackingField <DefaultPageBaseClass>k__BackingField <Host>k__BackingField CodeMemberMethod get_TargetMethod Replace get_Namespace CodeNamespace DetermineNamespace get_DefaultNamespace set_DefaultNamespace WebDefaultNamespace InstrumentationService CodeTypeReference get_GeneratedCode set_GeneratedCode EnsureGeneratedCode PostProcessGeneratedCode _generatedCode GenerateCode PreApplicationStartCode System.Web.Razor.Parser.SyntaxTree WebPage CheckForSpecialPage get_IsSpecialPage _isSpecialPage HelperPage ApplicationStartPage get_Message get_CodeLanguage set_CodeLanguage DetermineCodeLanguage RazorCodeLanguage GetCodeLanguage _codeLanguage GetDefaultCompilerTypeForLanguage AddRange CompareExchange Invoke get_IsAvailable IEnumerable IDisposable RuntimeTypeHandle GetTypeFromHandle Single RegisterSpecialFile Compile get_Name set_Name DefaultWriteMethodName DefaultExecuteMethodName DefaultWriteLiteralMethodName set_ResolveUrlMethodName DefineSectionMethodName WriteToMethodName WriteLiteralToMethodName EndContextMethodName BeginContextMethodName get_LanguageName PageStartFileName ApplicationStartFileName fileName baseTypeName TemplateTypeName FallbackApplicationTypeName get_GlobalAsaxTypeName set_GlobalAsaxTypeName _globalAsaxTypeName typeName get_FullName SectionName GroupName HttpContextAccessorName SanitizeClassName GetClassName get_DefaultClassName set_DefaultClassName _className ApplicationInstancePropertyName ContextPropertyName get_NewLine Combine RazorTemplateEngine set_Type GetGeneratedType get_PageBaseType set_PageBaseType _helperPageBaseType _pageBaseType baseType OfType get_CodeCompilerType compilerType GetType GetGlobalAsaxType get_Could_Not_Locate_FactoryType get_FactoryType set_FactoryType _factoryType Where System.Core GenerateCodeCore CreateHostFromConfigCore get_Culture set_Culture resourceCulture get_InvariantCulture get_CurrentCulture ParserBase get_OrdinalIgnoreCase Dispose Delegate EditorBrowsableState AssemblyMetadataAttribute CompilerGeneratedAttribute PreApplicationStartMethodAttribute GeneratedCodeAttribute DebuggerNonUserCodeAttribute NeutralResourcesLanguageAttribute DebuggableAttribute EditorBrowsableAttribute ComVisibleAttribute AssemblyTitleAttribute AssemblyTrademarkAttribute TargetFrameworkAttribute AssemblyFileVersionAttribute AssemblyInformationalVersionAttribute SatelliteContractVersionAttribute AssemblyConfigurationAttribute AssemblyDescriptionAttribute InternalsVisibleToAttribute BuildProviderAppliesToAttribute CompilationRelaxationsAttribute AssemblyProductAttribute AssemblyCopyrightAttribute CLSCompliantAttribute AssemblyCompanyAttribute RuntimeCompatibilityAttribute ConfigurationPropertyAttribute get_Value get_HasValue TryGetValue value EnsureAppRelative ToAppRelative Remove LastIndexOf SetIncludeDebugInfoFlag CreateHostFromConfig GetHostFromConfig config System.Threading System.Runtime.Versioning GetString Substring System.Web.Hosting get_BuildProvider_No_CodeLanguageService_For_Path get_InstrumentedSourceFilePath set_InstrumentedSourceFilePath OnBeforeCompilePath add_CompilingPath remove_CompilingPath get_PhysicalPath set_PhysicalPath MapPhysicalPath _physicalPath get_VirtualPath set_VirtualPath virtualPath MapPath get_Length EndsWith StartsWith add_CodeGenerationCompletedInternal remove_CodeGenerationCompletedInternal add__codeGenerationCompletedInternal remove__codeGenerationCompletedInternal add_CodeGenerationStartedInternal remove_CodeGenerationStartedInternal add__codeGenerationStartedInternal remove__codeGenerationStartedInternal get_AssemblyBuilderInternal System.ComponentModel System.Web.WebPages.Razor.dll get_Item set_Item System System.CodeDom resourceMan get_Argument_Must_Be_GreaterThan get_Argument_Must_Be_LessThan get_Argument_Must_Be_Between Join GetExtension GetFileNameWithoutExtension GetLanguageByExtension extension CodePropertyReferenceExpression CodeExpression ParameterExpression CodeCastExpression NewExpression HttpApplication get_Location SourceLocation System.Web.Compilation get_DefaultDebugCompilation set_DefaultDebugCompilation set_IncludeDebugInformation CodeTypeDeclaration System.Web.Configuration System.Configuration System.Web.WebPages.Razor.Configuration System.Web.WebPages.Instrumentation set_EnableInstrumentation System.Globalization ConfigurationSection GetRazorSection RazorPagesSection GetSection HostSection System.Reflection ICollection NamespaceCollection ConfigurationSectionCollection CodeTypeMemberCollection CodeStatementCollection CodeNamespaceImportCollection HttpParseException ArgumentNullException InvalidOperationException ArgumentException SecurityException StringComparison get_Argument_Must_Be_GreaterThanOrEqualTo get_Argument_Must_Be_LessThanOrEqualTo BuildProviderAppliesTo NamespaceInfo CultureInfo RazorWebSectionGroup ConfigurationSectionGroup System.Linq DirectorySeparatorChar get_Argument_Must_Be_Enum_Member CodeTypeMember InternalOpenReader TextReader RegisterBuildProvider RazorBuildProvider buildProvider IFormatProvider get_InnerBuilder set_InnerBuilder IAssemblyBuilder get_AssemblyBuilder _assemblyBuilder builder BuildManager get_ResourceManager WebConfigurationManager EventHandler System.CodeDom.Compiler AssemblyBuilderWrapper HostingEnvironmentWrapper StringComparer System.Web.Razor.Parser CreateMarkupParser HtmlMarkupParser AppCodeDir pair CreateExceptionFromParserError RazorError error IEnumerator GetEnumerator System.Web.Razor.Generator .ctor .cctor System.Web.Razor System.Web.WebPages.Razor System.Diagnostics get_Namespaces set_Namespaces _importedNamespaces _namespaces System.Runtime.InteropServices System.Runtime.CompilerServices System.Resources System.Web.WebPages.Razor.Resources RazorWebResources CommonResources System.Web.WebPages.Razor.Resources.RazorWebResources.resources System.Web.WebPages.Razor.Common.CommonResources.resources DebuggingModes get_Pages set_Pages System.Web.WebPages _pages get_VirtualPathDependencies _virtualPathDependencies _factories GetManifestResourceNames _specialFileBaseTypes get_Attributes set_Attributes MemberAttributes CodeGenerationCompleteEventArgs CompilingPathEventArgs args Equals Microsoft.Internal.Web.Utils System.Linq.Expressions get_Sections System.Collections StringSplitOptions ConfigurationPropertyOptions get_Chars get_Members set_StaticHelpers ParserHelpers get_CompilerParameters get_ParserErrors get_GeneratedClass get_SpecialPageBaseClass get_DefaultPageBaseClass set_DefaultPageBaseClass _specialFileBaseClass get_DefaultBaseClass set_DefaultBaseClass get_Success CompilerResults ParserResults GeneratorResults results get_GetStatements get_Imports get_NamespaceImports GetGlobalImports Exists Concat Format Object Select set_HasGet _pageBaseTypeSet _factoryTypeSet set_HasSet _namespacesSet _pagesSet _hostSet Split AddCodeCompileUnit compileUnit SingleOrDefault GetValueOrDefault HelperResult ConfigurationElement CodeStatement CodeMethodReturnStatement IHostingEnvironment get_Current System.Collections.Concurrent TrimStart Insert CodeNamespaceImport AddGlobalImport Last IList ArrayList get_Host set_Host RazorEngineHost CreateHost ApplyConfigurationToHost WebCodeRazorHost WebPageRazorHost CreateDefaultHost _host _isFullTrust MoveNext System.Web.Razor.Text CodeGeneratorContext set_GeneratedClassContext context New get_LineIndex PageClassNamePrefix ToArray AddVirtualPathDependency dependency get_Key get_Assembly get_CompiledAssembly GetExecutingAssembly ReadOnly Any GenerateTypeFactory DefaultTypeFactory CreateFactory WebRazorHostFactory GetDirectory op_Equality VirtualPathUtility System.Security get_Argument_Must_Be_Null_Or_Non_Empty get_Argument_Cannot_Be_Null_Or_Empty IsNullOrEmpty _pageBaseTypeProperty _typeProperty ConfigurationProperty CodeMemberProperty _namespacesProperty   b u i l d e r  . c s h t m l  . v b h t m l  { 0 } . { 1 }  v i r t u a l P a t h  c o n f i g  ~ / A p p _ C o d e  /  ~  ~ /  A p p _ C o d e  A S P  	A S P .  .  S y s t e m  5S y s t e m . C o l l e c t i o n s . G e n e r i c  S y s t e m . I O  S y s t e m . L i n q  S y s t e m . N e t  S y s t e m . W e b  %S y s t e m . W e b . H e l p e r s  'S y s t e m . W e b . S e c u r i t y  S y s t e m . W e b . U I  'S y s t e m . W e b . W e b P a g e s  1S y s t e m . W e b . W e b P a g e s . H t m l  _ A p p S t a r t  _ P a g e S t a r t  W r i t e T o  W r i t e L i t e r a l T o  D e f i n e S e c t i o n  B e g i n C o n t e x t  E n d C o n t e x t  	H r e f  n s  _ P a g e _  'A p p l i c a t i o n I n s t a n c e  C o n t e x t  b a s e T y p e  f i l e N a m e  b a s e T y p e N a m e  kS y s t e m . W e b . W e b P a g e s . R a z o r . R e s o u r c e s . R a z o r W e b R e s o u r c e s  [B u i l d P r o v i d e r _ N o _ C o d e L a n g u a g e S e r v i c e _ F o r _ P a t h  9C o u l d _ N o t _ L o c a t e _ F a c t o r y T y p e  / h o s t  f a c t o r y T y p e  / p a g e s  p a g e B a s e T y p e  n a m e s p a c e s  	h o s t  p a g e s  3s y s t e m . w e b . w e b P a g e s . r a z o r  AA r g u m e n t _ C a n n o t _ B e _ N u l l _ O r _ E m p t y  1A r g u m e n t _ M u s t _ B e _ B e t w e e n  9A r g u m e n t _ M u s t _ B e _ E n u m _ M e m b e r  9A r g u m e n t _ M u s t _ B e _ G r e a t e r T h a n  KA r g u m e n t _ M u s t _ B e _ G r e a t e r T h a n O r E q u a l T o  3A r g u m e n t _ M u s t _ B e _ L e s s T h a n  EA r g u m e n t _ M u s t _ B e _ L e s s T h a n O r E q u a l T o  EA r g u m e n t _ M u s t _ B e _ N u l l _ O r _ N o n _ E m p t y  3C o m m o n R e s o u r c e s . r e s o u r c e s     @∂ bU)I≥úÀËËıK7         = u }ÄÖÄâÄÖ im  =Å) =ÄÖÄâÄÖÄâÄÖÄâ Å-Å-Å-    
+
+ÄÖÄâÄçÄçÄç
+ÄçÄÖÄÖÄÖ	
+ÄÖ ÄïÄï  Äô  ÄùÄë  ÄÈ ÄùÄë        Äô   Å9  Å		 ÅA =  Ä©,	ÄÖ  Äç q
+ÄÖÄâ mÄ≠Ä±Ä© Ä· Ä±Ä©
+  ÅMÄπ Ä› 
+Äπ  mÄΩ     ÄΩ  
+ ÅY  Å] ,$ ÅeÄ…Ä≈$ Ä¡Ä≈$  Ä… Ä≈$=Ä…=   == Åq=Åy ÅmÅu	
+Ä≈$ÅyÄ≈$	ÄÕÄ› Å}
+Ä—	Ä…Ä—Ä›Ä› Ä… 
+Ä—Ä›	  ÄÕ ÄÕ  ÅÅÅÅ      =  Åï
+ Åô ÄŸ  Åù  Å°  Å• Å©
+ÄŸ	Ä…ÄŸÄ› Ä› Ä…   Å≠ Å≠	Ä›  Åe 	 ÅΩÄ› 
+
+ Ä›  ÄÌÄÂ 	 ÄÌ ÄÈ  =Ä¡      ÄÈ  Äı Ä…Äı
+
+Äı ÄÈ Ä’  ÅŸ  Å›	Ä…Ä˘
+Ä˘ Ä› 
+Ä˘ Ä˘ Å·  ÅÂ ÅÌ	 Å·ÅÌ ÅÌ Å˘ Å©   Å9 Å	 Å
+ =Ç  Ç Å  Å9  Ä… Äı∑z\V4‡â∞?_’
+:1ø8V≠6N5Ä† $  Ä  î      $  RSA1     µ¸êÁgáw:èﬁâ8»‘∫eπ `Y>ñƒíeàú¡?Îµ?¨1Æ”3≈Ó`!g-óÍ1®ÆΩ†/%ÿ}∫o…˝Yé‘⁄5‰L9åECË„;Ñ&=Æ…ıñÉoó»˜GPÂó\d‚üEﬁÙk*+G≠√e+ı√]©A p p _ C o d e C o n t e x t _ P a g e _ &A p p l i c a t i o n I n s t a n c e D e f i n e S e c t i o n A S P W r i t e T o W r i t e L i t e r a l T o B e g i n C o n t e x t E n d C o n t e x t H r e f _ A p p S t a r t _ P a g e S t a r t e,ÄëmÄï	ÄÖÄâÄçÄÖÄ¡Ä≈$	Ä…=Ä¡ÄÂÄÈÅÅ	ÅÅ48D
+Ä…Ä—H
+Ä…ÄŸLÄ…Äı
+Ä…Ä˘PÄ… e  e ,  , ,    ÄÖÄâ ÄÖÄâ Äç Äç
+ ÄÖ   m  Äù =Ä•  	 ÄµÄπ Äù , , ,< ,<
+ Ä≈$ 8, , < =   ÄÒ  Ä› =  Å Å	  Å Å  4 4  8 8 Ä— ÄŸ
+ Äı Ä˘( e( ( ,( Äô( ( m( Äù( ÄÈ(  Å Å	 ( Å( 4( 8        TWrapNonExceptionThrows             
+ en-US   ServiceableTrue    Microsoft ASP.NET Web Pages   System.Web.WebPages.Razor  Åp ÅjSystem.Web.WebPages.Razor.Test, PublicKey=0024000004800000940000000602000000240000525341310004000001000100b5fc90e7027f67871e773a8fde8938c81dd402ba65b9201d60593e96c492651e889cc13f1415ebb53fac1131ae0bd333c5ee6021672d9718ea31a8aebd0da0072f25d87dba6fc90ffd598ed4da35e44c398c454307e8e33b8426143daec9f596836f97c8f74750e5975c64e2189f45def46b2a2b1247adc3652bf5c308055da9  < 1System.Web.WebPages.Razor.PreApplicationStartCodeStart   Microsoft Corporation.  3 .¬© Microsoft Corporation. All rights reserved.   3.0.61128.0  ; 63.0.7-61128 (39d3064baf13181f5718ec5d85ba644b47d0704b)   3.0.0.0  I .NETFramework,Version=v4.5 TFrameworkDisplayName.NET Framework 4.5               @ 3System.Resources.Tools.StronglyTypedResourceBuilder4.0.0.0  / factoryType T
+IsRequiredTQDefaultValueˇ pageBaseType T
+IsRequired 
+namespaces T
+IsRequired host T
+IsRequired  pages T
+IsRequired    g  Œ Ôæ   ë   lSystem.Resources.ResourceReader, mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089#System.Resources.RuntimeResourceSet          PADPADPp0XÑ≠o√r]Ãzí˚Ó≤.¢0°è9?$˙~Hõã∑   z   C  Ù   √  z      E      @A r g u m e n t _ C a n n o t _ B e _ N u l l _ O r _ E m p t y     0A r g u m e n t _ M u s t _ B e _ B e t w e e n *   8A r g u m e n t _ M u s t _ B e _ E n u m _ M e m b e r N   8A r g u m e n t _ M u s t _ B e _ G r e a t e r T h a n Å   JA r g u m e n t _ M u s t _ B e _ G r e a t e r T h a n O r E q u a l T o ¢   2A r g u m e n t _ M u s t _ B e _ L e s s T h a n œ   DA r g u m e n t _ M u s t _ B e _ L e s s T h a n O r E q u a l T o Ì   DA r g u m e n t _ M u s t _ B e _ N u l l _ O r _ N o n _ E m p t y   (Value cannot be null or an empty string."Value must be between {0} and {1}.1Value must be a value from the "{0}" enumeration.Value must be greater than {0}.+Value must be greater than or equal to {0}.Value must be less than {0}.(Value must be less than or equal to {0}.NValue cannot be an empty string. It must either be null or a non-empty string.     ¡  Œ Ôæ   ë   lSystem.Resources.ResourceReader, mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089#System.Resources.RuntimeResourceSet          PADPADP‚…÷ÜáH˝k_       `  ZB u i l d P r o v i d e r _ N o _ C o d e L a n g u a g e S e r v i c e _ F o r _ P a t h     8C o u l d _ N o t _ L o c a t e _ F a c t o r y T y p e 2   0Could not determine the code language for "{0}".-Could not locate Razor Host Factory type: {0}   -_∂w∫¨dg6ƒJ^8`’µß†ÚÃ<Øâ(Í¡g¯6èîÖΩ˚<R∞CÎ5ƒ>Pa≤:ºÃ˝¥cVj“ÃPÎ5»µ=.«È‡65Õôx#JåK¢≈≈˝¸˘O…J?}‚GóœÌLŸ¥Lòˆh› ,-n-É¸ÛÓ"     M˛˛[         òè  òq  RSDS6nOGs+ôBú[pΩXaQh   C:\BuildAgent\work\8f8721ff33b44e63\Tooling\obj\Release\System.Web.WebPages.Razor\System.Web.WebPages.Razor.pdb                                                                                                                                                     ‹ê          ˆê                          Ëê            _CorDllMain mscoree.dll     ˇ%                                                                                                                                                                                                                                                                           Ä                  0  Ä                   H   X†  l          l4   V S _ V E R S I O N _ I N F O     ΩÔ˛        »Ó      ?                         D    V a r F i l e I n f o     $    T r a n s l a t i o n       ∞Ã   S t r i n g F i l e I n f o   ®   0 0 0 0 0 4 b 0      C o m m e n t s       N   C o m p a n y N a m e     M i c r o s o f t   C o r p o r a t i o n .     \   F i l e D e s c r i p t i o n     S y s t e m . W e b . W e b P a g e s . R a z o r   8   F i l e V e r s i o n     3 . 0 . 6 1 1 2 8 . 0   \   I n t e r n a l N a m e   S y s t e m . W e b . W e b P a g e s . R a z o r . d l l   Ä .  L e g a l C o p y r i g h t   ©   M i c r o s o f t   C o r p o r a t i o n .   A l l   r i g h t s   r e s e r v e d .   *   L e g a l T r a d e m a r k s         d   O r i g i n a l F i l e n a m e   S y s t e m . W e b . W e b P a g e s . R a z o r . d l l   X   P r o d u c t N a m e     M i c r o s o f t   A S P . N E T   W e b   P a g e s   í 7  P r o d u c t V e r s i o n   3 . 0 . 7 - 6 1 1 2 8   ( 3 9 d 3 0 6 4 b a f 1 3 1 8 1 f 5 7 1 8 e c 5 d 8 5 b a 6 4 4 b 4 7 d 0 7 0 4 b )     8   A s s e m b l y   V e r s i o n   3 . 0 . 0 . 0                                                                                                                                                                                                                                                                                                                                ê     1                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      ∏#    0Ç#®	*ÜHÜ˜†Ç#ô0Ç#ï10	`ÜHe 0\
++Ç7†N0L0
++Ç70	 †¢Ä 010	`ÜHe  §ÿÛC+"u8pb2C°pÊóîKl˝¶0{áHî†ÇÅ0Çˇ0ÇÁ†3  ^%ô£∏    0	*ÜHÜ˜ 0~10	UUS10U
+Washington10URedmond10U
+Microsoft Corporation1(0&UMicrosoft Code Signing PCA 20110180712200848Z190726200848Z0t10	UUS10U
+Washington10URedmond10U
+Microsoft Corporation10UMicrosoft Corporation0Ç"0	*ÜHÜ˜ Ç 0Ç
+Ç —îv6ÊÜ´6˛i˘F|ãàPÀêp∞U©$~9Áü¨{ó≤Œs
+˚‘õ$\µ9›~3l¸;&Ûò™]Sk™√Ï∏“ÔœWÃeÀØM.2±V+N4â˛i!Ω>D˚ﬁùÖø|vÜ}r±võaÊädLFŒ∂’:åwìwg!ú∂Z^GÜı<—	 =Õ≤È°Px—Ñà‚<"¸ØñÃ]ô¿ÌÎ•Zòíı»@NjsØﬁ„tz”_Fóº‚g(wô¨¡1è ˛K^T ƒe?
+„£F€ˆ,:æhúÊ4øßáçe9&…c‘Ô≈›Ω%˛˝(Ù4Üy¨*’_0ë;‰jÎ± # £Ç~0Çz0U%0
++Ç7L+0UGæ¿À·¶?˝e÷8Ú]∑Øw˜@ˇ0PUI0G§E0C1)0'U Microsoft Operations Puerto Rico10U230012+4379650U#0ÄHndÂP”Ç™77"µm® uï0TUM0K0I†G†EÜChttp://www.microsoft.com/pkiops/crl/MicCodSigPCA2011_2011-07-08.crl0a+U0S0Q+0ÜEhttp://www.microsoft.com/pkiops/certs/MicCodSigPCA2011_2011-07-08.crt0Uˇ0 0	*ÜHÜ˜ Ç üı…S?&Ï¢Dÿ—ücñK?\≈3£§√lØ¿∫ÎeÏû3ß¨[‘ΩêaÁ1Á√&¥¨ı'”HìÜà˛5ëd"—k-;®,î)“7ñÊ5ˇŒ»û$±‚9˘nxÿ∂)`'v4$õ›πóuÀ;≠Ç"ÄâÑªòP ∞&ÜIØŒ}EC4ñœÅ\,‘ìÚg´‚s»=£Õ¸2`È∞0˚,ª.ñÑìE(T\Õñ˝†€Åÿ∂0 C±ÛH¿≤F]^v*Xü‘ÓÚÙ˙HLµaã∞åAÈ™∏ùêÙˇjBπ>ÈÏî¸çÄªx„#ßx[≤m˘Y¡}∂—9…y‡É`
+⁄=∞—Ì6øEÈ6nÂ=;ß‘ß%èÊv£≥EZC1Ç⁄ÿÑÆπ∞uıˆ}Q7'Ëµ5Ñq˜W™Æ˙âq…ò“ûZdvæå√}jëÒÙÚŸ51∏€r˙¥u»àõjøòE«f≤◊ˇŒíêu‰ÎÊÜ“»€'¿[ïoIoX]i*ﬁSK¯Ë {ˆl˘Ö™Oöø™W›`∆ıq ÙQ®ö È—Î4G=u˙"ÏU?j9kÈZ?éÙ#x0≤Ú¶8À5ç™òY$@∏:g§_†˛ÿ;I˚·ÌmÉPŒ>‡ŸËå!JA¬ﬁÎé[Ó√nnÊT5fgr|ÍRˆ"ƒr?Æ0Çz0Çb†
+aê“     0	*ÜHÜ˜ 0Åà10	UUS10U
+Washington10URedmond10U
+Microsoft Corporation1200U)Microsoft Root Certificate Authority 20110110708205909Z260708210909Z0~10	UUS10U
+Washington10URedmond10U
+Microsoft Corporation1(0&UMicrosoft Code Signing PCA 20110Ç"0	*ÜHÜ˜ Ç 0Ç
+Ç ´˙r.≠ÿn™ÇM4∫Ú∂X!üB*kÈZP™∏8I∫√›7k∆ÿ8¬ô∞»9’1B”âydá~î`$lØûIúÈh^“ﬂõS≤
+,√ØŸ©+Æz	Ø◊ñY `ÈfvË2R&/Á´Pœ≥D∑]ÿƒ.u´hÛÀmÛ:\°ÙF∫‡8d¨nd5x¶†c-”@ì¯„ﬁ’\y•I)Áæ†wæî=Ô˚„+ZMV(¢zr‡:∑I^ÿÌÌCëÉŸ{≤{ÜŸ>±å]ËâOÑÚ°/Y‰ê;-Æ3X≈∑>˛2”≥=±≤Øí8~“ùÄ,ıNVë!5%√9ndS∫ú≠#ÑÀÙ∫Üç˜_–Røåîáº¿!t%_(∂Ã'(8%ò9J6œ|±íÆ#ß©fÏaj·(Iù_à‚%]”!K>RƒµW?$—z[/’#„p]QFw≥¯ ·º¨Ç_€¿≥Ω‘UKÁ9°È#Iº∏D|E‰¡√rz‡rÁ$ﬂøFô≈Ô¬W€ÉçÏMI0ß´éﬂÏ[üØ¸›∞f‚¡óÅ{Ì÷ÌKÁI)ß(¶ß}gÄÊäbx_≤/Ñ◊Wú\øw((ÒÌm√(è,è@7O¡·ÖDâƒ	L≈‘•C/tï˜n¯x X,]`ïö>O3Ñ⁄∞àﬁûNÙñ∞ºF†lò“‡÷àå £ÇÌ0ÇÈ0	+Ç7 0UHndÂP”Ç™77"µm® uï0	+Ç7
+ S u b C A0UÜ0Uˇ0ˇ0U#0Är-:1êCπN·Íß«1—#â40ZUS0Q0O†M†KÜIhttp://crl.microsoft.com/pki/crl/products/MicRooCerAut2011_2011_03_22.crl0^+R0P0N+0ÜBhttp://www.microsoft.com/pki/certs/MicRooCerAut2011_2011_03_22.crt0ÅüU Åó0Åî0Åë	+Ç7.0ÅÉ0?+3http://www.microsoft.com/pkiops/docs/primarycps.htm0@+042  L e g a l _ p o l i c y _ s t a t e m e n t . 0	*ÜHÜ˜ Ç gÚÜ•ò‡Ty.”ÿtg"õñ·cíôBñ}“yê¡e_.,>¯√r—mÉ˛æ?Ë
+ ;øG©£Ûi€cø"5•ó]eÑê}ãFPUÿí|“KÛ<BãR–∞˝k„>.)õÊ=•‘µwî9‚Èd…D=xz#Û}¶êtÉçÙÀ&F*¬äª§©õÌh˙h.ï†*?*kXIc	inZòñ‰ÉÙ¿èÛF+ﬁ¸;–Ω5Ôn%ÆÂØ'Ì–›ÛØô(óòM=Úâ÷√2‚≈-Œ[û¥I9
+∆
+¬∆≠ÆÂ≤Ÿ€àQEX82q'±Ù'¯ﬁ,: iò≤Yâhnoß∑t√@¶*(>Ç?Mf¿≥Mı·èo}EßvÂ@*e£√]RbÜ√c6óÜﬂ⁄Û¯Ú°ö'·Õ•ó–Ó]cA„[úá>w—±uæaaµ‹∆æﬂA«(Óﬁe/Ïóˆ°\ñÿ ÷°FΩYÛó•	KHôÄ– )≈±õ•?Ew5∆“¢¢üzz"˙Hï´˚G#Äıû¯øk∑Kó‚ÎuxÏÍ7ôyKˇ÷≥#huÊØ˙¸ãÎÄÍi;Ø¸0ÌLéﬂﬂumcë=—ùVNOøÄW"°x2!zÔA
+±?˚®Ã§]¡°àõWqVNHE¿B…õv[
+ÄHk˝yü¡Ωmmj…RszPÕ1Çö0Çñ0Åï0~10	UUS10U
+Washington10URedmond10U
+Microsoft Corporation1(0&UMicrosoft Code Signing PCA 20113  ^%ô£∏    0	`ÜHe †ÅÌ0	*ÜHÜ˜	1
++Ç70
++Ç710
++Ç70/	*ÜHÜ˜	1" 3¡ïW'L€ú”r‚Ÿâ«ıçÍaƒáa}üÎÓ∑ˆ)0ÅÄ
++Ç71r0p†VÄT M i c r o s o f t   A S P . N E T   W e b   F r a m e w o r k s   a n d   T o o l s°Ähttps://www.asp.net 0	*ÜHÜ˜ Ç {~ÔUõ~ÖtX/:a&˜ 68µø=t»B%∫'åø|e£°Á¡vlg«È71q SDØf^Tê.~∑N%˝Cî≠ÉÔ¢ÜÉ Ê.è’„–6,x˚Í	*€B‘ƒ\T}V·ßV≥”Zs¡™›u∫ã ˇïò.IÍIÁ3ÂΩ¥<µÈﬁlqÿ0K\Ä ¥ƒJ„Rç2uZ¶í°aW~/L)RoT∏5Èròxèè∫œ]üçoÇ4ztô&Àƒ3q$È®™)®[à6<‰°˙‡‰∆≈}ﬂäó¢™c33ÿgM∞>´>Ov∂Èç∞Ω˛¯ÎF%⁄q‡˘ä©¬°ÇÂ0Ç·
++Ç71Ç—0ÇÕ	*ÜHÜ˜†Çæ0Ç∫10	`ÜHe 0ÇQ*ÜHÜ˜	†Ç@Ç<0Ç8
++ÑY
+010	`ÜHe  ‰Í~ﬁ7ñÊËôL≠1–ÆI58‚∏?ü5óÓ≥⁄ﬂU[˛)Ú.20181128205427.288Z0ÄÙ†Å–§ÅÕ0Å 10	UUS10	UWA10URedmond10U
+Microsoft Corporation1-0+U$Microsoft Ireland Operations Limited1&0$UThales TSS ESN:E041-4BEE-FA7E1%0#UMicrosoft Time-Stamp service†Ç<0ÇÒ0ÇŸ†3   ÷ûeÅé£;     ÷0	*ÜHÜ˜ 0|10	UUS10U
+Washington10URedmond10U
+Microsoft Corporation1&0$UMicrosoft Time-Stamp PCA 20100180823202649Z191123202649Z0Å 10	UUS10	UWA10URedmond10U
+Microsoft Corporation1-0+U$Microsoft Ireland Operations Limited1&0$UThales TSS ESN:E041-4BEE-FA7E1%0#UMicrosoft Time-Stamp service0Ç"0	*ÜHÜ˜ Ç 0Ç
+Ç ’œ¿^ÖõÔhiØ/˚	‡àP©Ì6òÄ9ÓiÖI·4˚Ç<ƒa:>5}ÀIi:ù≥ÅxÅOﬁQõß⁄’ËÏ‹ìºTl#∆`µ<;ÉuhÚ√[¿ô~kÒæCîÂ§™˙£µZ¡EˇÑfÊ% ∂ñ8Ï¶∏≥&h~5ßLy?≤Ü%^a¿Ñ”å≤ùQÈÀiÖ‚üè€ j∞7è’:1ª[/ √ÅÑûÕµ4SÒÁ12‚˙–˜[@ÄΩı˚⁄3ü•
+}}H<&àlÂóM¨6úòÕ‡WÇ∏êöL’cg(|ëÃ¢ÔÆN}›»$ï ‹–Ò†Ú 8÷:4€â £Ç0Ç0UgT0ì‡I1~ˆNß87èà¯0U#0Ä’c:\ä1êÛC{|F≈3hZÖmU0VUO0M0K†I†GÜEhttp://crl.microsoft.com/pki/crl/products/MicTimStaPCA_2010-07-01.crl0Z+N0L0J+0Ü>http://www.microsoft.com/pki/certs/MicTimStaPCA_2010-07-01.crt0Uˇ0 0U%0
++0	*ÜHÜ˜ Ç O“ÖÄâõÂ•√‡ëµ≈-˛f∑˙πÙÆXÑ=q∂p7}£ç¢S~Õ“ıcÚ5lbÔ^ƒbbÅh¶[?Ù4~ßmmÂ»ìA¯∞ %äà±£ÓWÁãˇ» N¿"˘ºE¢V‚Ω:Ì¸Ù4|.dõ©€xkr∂¯gÒÀ &asê_úÚ“”Ä°nä›3¶pH!ó9˜SN†ÆØa)˛Ì+∂aç·^âêvÜëË
+ÌÎg≤\≤lËí%x£W¡°6:Lï>õü´ŸUÔ«A,q4⁄V0†NãÛu@Ä–‰˚\Óõ¬T‹û≥í7˛ﬁ=EÖ«ƒz27‚˚kñ)–Ü@èº&ø0Çq0ÇY†
+a	Å*     0	*ÜHÜ˜ 0Åà10	UUS10U
+Washington10URedmond10U
+Microsoft Corporation1200U)Microsoft Root Certificate Authority 20100100701213655Z250701214655Z0|10	UUS10U
+Washington10URedmond10U
+Microsoft Corporation1&0$UMicrosoft Time-Stamp PCA 20100Ç"0	*ÜHÜ˜ Ç 0Ç
+Ç ©ºwä: Ï¸óı˙iîktT’•
+ ÇÖ˚Ì|hK,_≈√Âa¬v∑>f+[S'1AïŒ	é|a0Y±0DÒ`àÑTC◊M∏8≥B›ì¨÷s0W&Ç£E–ÍıGÅÕø$`2X`FÚXGÜ2Ñtagë_ÅT±œìLí¡ƒ¶]—an(∆˘ÜÄªﬂa¸F¡'$gr!äØKdâPb±]˝w=Wu¨ΩäBM@Q—ú>gıf¿ñD~Ô–K˝nÂö ±®Úz*
+1⁄Në∂à5Ëx∞ÈôÕ<Á/D∫ßÙ‹dΩ§¡ 	ìxÕ¸º¿…D]^úO"M £ÇÊ0Ç‚0	+Ç7 0U’c:\ä1êÛC{|F≈3hZÖmU0	+Ç7
+ S u b C A0UÜ0Uˇ0ˇ0U#0Ä’ˆVÀèË¢\bh—=îê[◊Œöƒ0VUO0M0K†I†GÜEhttp://crl.microsoft.com/pki/crl/products/MicRooCerAut_2010-06-23.crl0Z+N0L0J+0Ü>http://www.microsoft.com/pki/certs/MicRooCerAut_2010-06-23.crt0Å†U ˇÅï0Åí0Åè	+Ç7.0ÅÅ0=+1http://www.microsoft.com/PKI/docs/CPS/default.htm0@+042  L e g a l _ P o l i c y _ S t a t e m e n t . 0	*ÜHÜ˜ Ç ÊàQ‚∆‡ò?Åq=ù£°!o≥Î¶Ãı1æœ‚©˛˙Wm0≥¬≈f…jﬂıÁxΩ«®û%„˘ºÌkTW+QÇD˚πSåÃÙ`ävÃ@@Aõ‹\ˇ\˘^5ò$VKtÔB»Øø∆Ú7}Z?ÚôyJëR Ø8ı/yÅeŸ©µk‰«Œˆ z oK0D$"<œÌ•ñèY)º∂˝·pü2J'˝UØ/˛∂Âé3ªb_ö€W@ÈÒŒôfêåˇjb›≈Jë&‚9ÏJqcù{!m√ú£¢<˙}ñjêx¶m“·ú˘¸8ÿîÙ∆•
+ñÜ§ΩûÆBÉ∏µÄõ"8 µ%ÂdÏ˜Ùø~cY%z.9Wv¢q™äâ∫aßÀöÿGöÄ≈–Õß–Ô}É·;q	ﬂ]tò"a⁄∞PoΩÒ· ﬂÁ1§ì:˜eGxË¯®H´˜ﬁr~akow©ÅÀß	¨9ªÏ∆ÀÿÇ¥rÕÙ∏ÖÄ˚â*T9≤[⁄»Uôzás;Êò-Íç‡3.)ı¿/T'!˜»¨N⁄(∏±©€ñ≤ßB¢…œAM‡Ü˘*ö£f0”ªt2Kﬂc{ıôä/«!ØYµÆ‹D<óPq◊°“≈U„iﬁW¡—ﬁ0¿˝ÃÊM˚ø]OÈù8/ºœX.Ô†P5⁄Ô	'’≥~5∫⁄6€”_èﬁtàI°ÇŒ0Ç70Å¯°Å–§ÅÕ0Å 10	UUS10	UWA10URedmond10U
+Microsoft Corporation1-0+U$Microsoft Ireland Operations Limited1&0$UThales TSS ESN:E041-4BEE-FA7E1%0#UMicrosoft Time-Stamp service¢#
+0+ T_Jø/Îa0ïÙÆåœ∑Ωê —†ÅÉ0ÅÄ§~0|10	UUS10U
+Washington10URedmond10U
+Microsoft Corporation1&0$UMicrosoft Time-Stamp PCA 20100	*ÜHÜ˜  ﬂ©Fi0"20181129005257Z20181130005257Z0w0=
++ÑY
+1/0-0
+ ﬂ©Fi 0
+ "–ˇ0 !0
+ ﬂ™óÈ 06
++ÑY
+1(0&0
++ÑY
+†
+0 ° °
+0 Ü†0	*ÜHÜ˜ ÅÅ B˙üf◊"¿–“G~rwxœf[‚_ﬁà~Lë„
+Uœ¿IóÍø•^o‡Xdÿ¥wõ◊f§·¬K_ª'5†~gN(’—MÒrŸL+#T&Å)*%“∑√pÖûëç=vÒÕå&uF˝ÊÜpp3Fˇ¢&]‚∑ù~1“⁄¨â}F( £¥/„ B1Ç0Ç	0Åì0|10	UUS10U
+Washington10URedmond10U
+Microsoft Corporation1&0$UMicrosoft Time-Stamp PCA 20103   ÷ûeÅé£;     ÷0	`ÜHe †ÇJ0	*ÜHÜ˜	1*ÜHÜ˜	0/	*ÜHÜ˜	1" öÖ¨≥Ú/yﬂ3ÕΩ˙^ƒ¯åÒEnÏúã“Ì
+vÂŸ0Å˙*ÜHÜ˜	/1ÅÍ0ÅÁ0Å‰0ÅΩ ß/9>©±öﬁdE7,:°£q„±vÂ[˛—ò'.îHŒ0Åò0ÅÄ§~0|10	UUS10U
+Washington10URedmond10U
+Microsoft Corporation1&0$UMicrosoft Time-Stamp PCA 20103   ÷ûeÅé£;     ÷0" yÓQ÷pmÿ ômÚ$?A5
+ˇ…h,±2√ﬁ°Œ‘Ò§0	*ÜHÜ˜ Ç Y=N7|·ΩöôÍ&‡8îÏò·‡È@÷)∞˚ÂÀÉ;kïtCaJL<≈É¥¬·Tı‘=pF7O≈“q˜ÛÏÍ0‹˙¯¡√/[ BåÁj}¬
+[’œí—˙≈Ù∞h1ãY±3%£¨ ,–	Bõl’Ç™•˘e¨â#÷Oë˚^ÉZú• }
+GîQzËYi;ü–≤ÄÏœæŒm_ ‰Èdˆ\”e™˘ÌÇpÖ]?ˇZªˆ‚Gô°¥Íwb˜∞.j∆’5Óˇ€Ñ¯ÎïøÛ;œ”:2tGq€jó„‰®O†^`’æ';+k«êx	ø#∆ò·vÑÉÔÇ"\KC®õ                                                                            {
+  "_args": [
+    [
+      "source-map@0.6.1",
+      "C:\\Users\\SlimReaper\\Desktop\\INF354ExamSectionA_studentCopy\\INF354ExamSectionA_StudentFiles"
+    ]
+  ],
+  "_development": true,
+  "_from": "source-map@0.6.1",
+  "_id": "source-map@0.6.1",
+  "_inBundle": false,
+  "_integrity": "sha512-UjgapumWlbMhkBgzT7Ykc5YXUT46F0iKu8SGXq0bcwP5dz/h0Plj6enJqjz1Zbq2l5WaqYnrVbwWOWMyF3F47g==",
+  "_location": "/postcss-merge-rules/source-map",
+  "_phantomChildren": {},
+  "_requested": {
+    "type": "version",
+    "registry": true,
+    "raw": "source-map@0.6.1",
+    "name": "source-map",
+    "escapedName": "source-map",
+    "rawSpec": "0.6.1",
+    "saveSpec": null,
+    "fetchSpec": "0.6.1"
+  },
+  "_requiredBy": [
+    "/postcss-merge-rules/postcss"
+  ],
+  "_resolved": "https://registry.npmjs.org/source-map/-/source-map-0.6.1.tgz",
+  "_spec": "0.6.1",
+  "_where": "C:\\Users\\SlimReaper\\Desktop\\INF354ExamSectionA_studentCopy\\INF354ExamSectionA_StudentFiles",
+  "author": {
+    "name": "Nick Fitzgerald",
+    "email": "nfitzgerald@mozilla.com"
+  },
+  "bugs": {
+    "url": "https://github.com/mozilla/source-map/issues"
+  },
+  "contributors": [
+    {
+      "name": "Tobias Koppers",
+      "email": "tobias.koppers@googlemail.com"
+    },
+    {
+      "name": "Duncan Beevers",
+      "email": "duncan@dweebd.com"
+    },
+    {
+      "name": "Stephen Crane",
+      "email": "scrane@mozilla.com"
+    },
+    {
+      "name": "Ryan Seddon",
+      "email": "seddon.ryan@gmail.com"
+    },
+    {
+      "name": "Miles Elam",
+      "email": "miles.elam@deem.com"
+    },
+    {
+      "name": "Mihai Bazon",
+      "email": "mihai.bazon@gmail.com"
+    },
+    {
+      "name": "Michael Ficarra",
+      "email": "github.public.email@michael.ficarra.me"
+    },
+    {
+      "name": "Todd Wolfson",
+      "email": "todd@twolfson.com"
+    },
+    {
+      "name": "Alexander Solovyov",
+      "email": "alexander@solovyov.net"
+    },
+    {
+      "name": "Felix Gnass",
+      "email": "fgnass@gmail.com"
+    },
+    {
+      "name": "Conrad Irwin",
+      "email": "conrad.irwin@gmail.com"
+    },
+    {
+      "name": "usrbincc",
+      "email": "usrbincc@yahoo.com"
+    },
+    {
+      "name": "David Glasser",
+      "email": "glasser@davidglasser.net"
+    },
+    {
+      "name": "Chase Douglas",
+      "email": "chase@newrelic.com"
+    },
+    {
+      "name": "Evan Wallace",
+      "email": "evan.exe@gmail.com"
+    },
+    {
+      "name": "Heather Arthur",
+      "email": "fayearthur@gmail.com"
+    },
+    {
+      "name": "Hugh Kennedy",
+      "email": "hughskennedy@gmail.com"
+    },
+    {
+      "name": "David Glasser",
+      "email": "glasser@davidglasser.net"
+    },
+    {
+      "name": "Simon Lydell",
+      "email": "simon.lydell@gmail.com"
+    },
+    {
+      "name": "Jmeas Smith",
+      "email": "jellyes2@gmail.com"
+    },
+    {
+      "name": "Michael Z Goddard",
+      "email": "mzgoddard@gmail.com"
+    },
+    {
+      "name": "azu",
+      "email": "azu@users.noreply.github.com"
+    },
+    {
+      "name": "John Gozde",
+      "email": "john@gozde.ca"
+    },
+    {
+      "name": "Adam Kirkton",
+      "email": "akirkton@truefitinnovation.com"
+    },
+    {
+      "name": "Chris Montgomery",
+      "email": "christopher.montgomery@dowjones.com"
+    },
+    {
+      "name": "J. Ryan Stinnett",
+      "email": "jryans@gmail.com"
+    },
+    {
+      "name": "Jack Herrington",
+      "email": "jherrington@walmartlabs.com"
+    },
+    {
+      "name": "Chris Truter",
+      "email": "jeffpalentine@gmail.com"
+    },
+    {
+      "name": "Daniel Espeset",
+      "email": "daniel@danielespeset.com"
+    },
+    {
+      "name": "Jamie Wong",
+      "email": "jamie.lf.wong@gmail.com"
+    },
+    {
+      "name": "Eddy Bru√´l",
+      "email": "ejpbruel@mozilla.com"
+    },
+    {
+      "name": "Hawken Rives",
+      "email": "hawkrives@gmail.com"
+    },
+    {
+      "name": "Gilad Peleg",
+      "email": "giladp007@gmail.com"
+    },
+    {
+      "name": "djchie",
+      "email": "djchie.dev@gmail.com"
+    },
+    {
+      "name": "Gary Ye",
+      "email": "garysye@gmail.com"
+    },
+    {
+      "name": "Nicolas LaleveÃÅe",
+      "email": "nicolas.lalevee@hibnet.org"
+    }
+  ],
+  "description": "Generates and consumes source maps",
+  "devDependencies": {
+    "doctoc": "^0.15.0",
+    "webpack": "^1.12.0"
+  },
+  "engines": {
+    "node": ">=0.10.0"
+  },
+  "files": [
+    "source-map.js",
+    "source-map.d.ts",
+    "lib/",
+    "dist/source-map.debug.js",
+    "dist/source-map.js",
+    "dist/source-map.min.js",
+    "dist/source-map.min.js.map"
+  ],
+  "homepage": "https://github.com/mozilla/source-map",
+  "license": "BSD-3-Clause",
+  "main": "./source-map.js",
+  "name": "source-map",
+  "repository": {
+    "type": "git",
+    "url": "git+ssh://git@github.com/mozilla/source-map.git"
+  },
+  "scripts": {
+    "build": "webpack --color",
+    "test": "npm run build && node test/run-tests.js",
+    "toc": "doctoc --title '## Table of Contents' README.md && doctoc --title '## Table of Contents' CONTRIBUTING.md"
+  },
+  "typings": "source-map",
+  "version": "0.6.1"
+}
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        

@@ -1,0 +1,2145 @@
+/*!
+ * Modernizr v2.8.3
+ * www.modernizr.com
+ *
+ * Copyright (c) Faruk Ates, Paul Irish, Alex Sexton
+ * Available under the BSD and MIT licenses: www.modernizr.com/license/
+ */
+
+/*
+ * Modernizr tests which native CSS3 and HTML5 features are available in
+ * the current UA and makes the results available to you in two ways:
+ * as properties on a global Modernizr object, and as classes on the
+ * <html> element. This information allows you to progressively enhance
+ * your pages with a granular level of control over the experience.
+ *
+ * Modernizr has an optional (not included) conditional resource loader
+ * called Modernizr.load(), based on Yepnope.js (yepnopejs.com).
+ * To get a build that includes Modernizr.load(), as well as choosing
+ * which tests to include, go to www.modernizr.com/download/
+ *
+ * Authors        Faruk Ates, Paul Irish, Alex Sexton
+ * Contributors   Ryan Seddon, Ben Alman
+ */
+
+window.Modernizr = (function( window, document, undefined ) {
+
+    var version = '2.8.3',
+
+    Modernizr = {},
+
+    /*>>cssclasses*/
+    // option for enabling the HTML classes to be added
+    enableClasses = true,
+    /*>>cssclasses*/
+
+    docElement = document.documentElement,
+
+    /**
+     * Create our "modernizr" element that we do most feature tests on.
+     */
+    mod = 'modernizr',
+    modElem = document.createElement(mod),
+    mStyle = modElem.style,
+
+    /**
+     * Create the input element for various Web Forms feature tests.
+     */
+    inputElem /*>>inputelem*/ = document.createElement('input') /*>>inputelem*/ ,
+
+    /*>>smile*/
+    smile = ':)',
+    /*>>smile*/
+
+    toString = {}.toString,
+
+    // TODO :: make the prefixes more granular
+    /*>>prefixes*/
+    // List of property values to set for css tests. See ticket #21
+    prefixes = ' -webkit- -moz- -o- -ms- '.split(' '),
+    /*>>prefixes*/
+
+    /*>>domprefixes*/
+    // Following spec is to expose vendor-specific style properties as:
+    //   elem.style.WebkitBorderRadius
+    // and the following would be incorrect:
+    //   elem.style.webkitBorderRadius
+
+    // Webkit ghosts their properties in lowercase but Opera & Moz do not.
+    // Microsoft uses a lowercase `ms` instead of the correct `Ms` in IE8+
+    //   erik.eae.net/archives/2008/03/10/21.48.10/
+
+    // More here: github.com/Modernizr/Modernizr/issues/issue/21
+    omPrefixes = 'Webkit Moz O ms',
+
+    cssomPrefixes = omPrefixes.split(' '),
+
+    domPrefixes = omPrefixes.toLowerCase().split(' '),
+    /*>>domprefixes*/
+
+    /*>>ns*/
+    ns = {'svg': 'http://www.w3.org/2000/svg'},
+    /*>>ns*/
+
+    tests = {},
+    inputs = {},
+    attrs = {},
+
+    classes = [],
+
+    slice = classes.slice,
+
+    featureName, // used in testing loop
+
+
+    /*>>teststyles*/
+    // Inject element with style element and some CSS rules
+    injectElementWithStyles = function( rule, callback, nodes, testnames ) {
+
+      var style, ret, node, docOverflow,
+          div = document.createElement('div'),
+          // After page load injecting a fake body doesn't work so check if body exists
+          body = document.body,
+          // IE6 and 7 won't return offsetWidth or offsetHeight unless it's in the body element, so we fake it.
+          fakeBody = body || document.createElement('body');
+
+      if ( parseInt(nodes, 10) ) {
+          // In order not to give false positives we create a node for each test
+          // This also allows the method to scale for unspecified uses
+          while ( nodes-- ) {
+              node = document.createElement('div');
+              node.id = testnames ? testnames[nodes] : mod + (nodes + 1);
+              div.appendChild(node);
+          }
+      }
+
+      // <style> elements in IE6-9 are considered 'NoScope' elements and therefore will be removed
+      // when injected with innerHTML. To get around this you need to prepend the 'NoScope' element
+      // with a 'scoped' element, in our case the soft-hyphen entity as it won't mess with our measurements.
+      // msdn.microsoft.com/en-us/library/ms533897%28VS.85%29.aspx
+      // Documents served as xml will throw if using &shy; so use xml friendly encoded version. See issue #277
+      style = ['&#173;','<style id="s', mod, '">', rule, '</style>'].join('');
+      div.id = mod;
+      // IE6 will false positive on some tests due to the style element inside the test div somehow interfering offsetHeight, so insert it into body or fakebody.
+      // Opera will act all quirky when injecting elements in documentElement when page is served as xml, needs fakebody too. #270
+      (body ? div : fakeBody).innerHTML += style;
+      fakeBody.appendChild(div);
+      if ( !body ) {
+          //avoid crashing IE8, if background image is used
+          fakeBody.style.background = '';
+          //Safari 5.13/5.1.4 OSX stops loading if ::-webkit-scrollbar is used and scrollbars are visible
+          fakeBody.style.overflow = 'hidden';
+          docOverflow = docElement.style.overflow;
+          docElement.style.overflow = 'hidden';
+          docElement.appendChild(fakeBody);
+      }
+
+      ret = callback(div, rule);
+      // If this is done after page load we don't want to remove the body so check if body exists
+      if ( !body ) {
+          fakeBody.parentNode.removeChild(fakeBody);
+          docElement.style.overflow = docOverflow;
+      } else {
+          div.parentNode.removeChild(div);
+      }
+
+      return !!ret;
+
+    },
+    /*>>teststyles*/
+
+    /*>>mq*/
+    // adapted from matchMedia polyfill
+    // by Scott Jehl and Paul Irish
+    // gist.github.com/786768
+    testMediaQuery = function( mq ) {
+
+      var matchMedia = window.matchMedia || window.msMatchMedia;
+      if ( matchMedia ) {
+        return matchMedia(mq) && matchMedia(mq).matches || false;
+      }
+
+      var bool;
+
+      injectElementWithStyles('@media ' + mq + ' { #' + mod + ' { position: absolute; } }', function( node ) {
+        bool = (window.getComputedStyle ?
+                  getComputedStyle(node, null) :
+                  node.currentStyle)['position'] == 'absolute';
+      });
+
+      return bool;
+
+     },
+     /*>>mq*/
+
+
+    /*>>hasevent*/
+    //
+    // isEventSupported determines if a given element supports the given event
+    // kangax.github.com/iseventsupported/
+    //
+    // The following results are known incorrects:
+    //   Modernizr.hasEvent("webkitTransitionEnd", elem) // false negative
+    //   Modernizr.hasEvent("textInput") // in Webkit. github.com/Modernizr/Modernizr/issues/333
+    //   ...
+    isEventSupported = (function() {
+
+      var TAGNAMES = {
+        'select': 'input', 'change': 'input',
+        'submit': 'form', 'reset': 'form',
+        'error': 'img', 'load': 'img', 'abort': 'img'
+      };
+
+      function isEventSupported( eventName, element ) {
+
+        element = element || document.createElement(TAGNAMES[eventName] || 'div');
+        eventName = 'on' + eventName;
+
+        // When using `setAttribute`, IE skips "unload", WebKit skips "unload" and "resize", whereas `in` "catches" those
+        var isSupported = eventName in element;
+
+        if ( !isSupported ) {
+          // If it has no `setAttribute` (i.e. doesn't implement Node interface), try generic element
+          if ( !element.setAttribute ) {
+            element = document.createElement('div');
+          }
+          if ( element.setAttribute && element.removeAttribute ) {
+            element.setAttribute(eventName, '');
+            isSupported = is(element[eventName], 'function');
+
+            // If property was created, "remove it" (by setting value to `undefined`)
+            if ( !is(element[eventName], 'undefined') ) {
+              element[eventName] = undefined;
+            }
+            element.removeAttribute(eventName);
+          }
+        }
+
+        element = null;
+        return isSupported;
+      }
+      return isEventSupported;
+    })(),
+    /*>>hasevent*/
+
+    // TODO :: Add flag for hasownprop ? didn't last time
+
+    // hasOwnProperty shim by kangax needed for Safari 2.0 support
+    _hasOwnProperty = ({}).hasOwnProperty, hasOwnProp;
+
+    if ( !is(_hasOwnProperty, 'undefined') && !is(_hasOwnProperty.call, 'undefined') ) {
+      hasOwnProp = function (object, property) {
+        return _hasOwnProperty.call(object, property);
+      };
+    }
+    else {
+      hasOwnProp = function (object, property) { /* yes, this can give false positives/negatives, but most of the time we don't care about those */
+        return ((property in object) && is(object.constructor.prototype[property], 'undefined'));
+      };
+    }
+
+    // Adapted from ES5-shim https://github.com/kriskowal/es5-shim/blob/master/es5-shim.js
+    // es5.github.com/#x15.3.4.5
+
+    if (!Function.prototype.bind) {
+      Function.prototype.bind = function bind(that) {
+
+        var target = this;
+
+        if (typeof target != "function") {
+            throw new TypeError();
+        }
+
+        var args = slice.call(arguments, 1),
+            bound = function () {
+
+            if (this instanceof bound) {
+
+              var F = function(){};
+              F.prototype = target.prototype;
+              var self = new F();
+
+              var result = target.apply(
+                  self,
+                  args.concat(slice.call(arguments))
+              );
+              if (Object(result) === result) {
+                  return result;
+              }
+              return self;
+
+            } else {
+
+              return target.apply(
+                  that,
+                  args.concat(slice.call(arguments))
+              );
+
+            }
+
+        };
+
+        return bound;
+      };
+    }
+
+    /**
+     * setCss applies given styles to the Modernizr DOM node.
+     */
+    function setCss( str ) {
+        mStyle.cssText = str;
+    }
+
+    /**
+     * setCssAll extrapolates all vendor-specific css strings.
+     */
+    function setCssAll( str1, str2 ) {
+        return setCss(prefixes.join(str1 + ';') + ( str2 || '' ));
+    }
+
+    /**
+     * is returns a boolean for if typeof obj is exactly type.
+     */
+    function is( obj, type ) {
+        return typeof obj === type;
+    }
+
+    /**
+     * contains returns a boolean for if substr is found within str.
+     */
+    function contains( str, substr ) {
+        return !!~('' + str).indexOf(substr);
+    }
+
+    /*>>testprop*/
+
+    // testProps is a generic CSS / DOM property test.
+
+    // In testing support for a given CSS property, it's legit to test:
+    //    `elem.style[styleName] !== undefined`
+    // If the property is supported it will return an empty string,
+    // if unsupported it will return undefined.
+
+    // We'll take advantage of this quick test and skip setting a style
+    // on our modernizr element, but instead just testing undefined vs
+    // empty string.
+
+    // Because the testing of the CSS property names (with "-", as
+    // opposed to the camelCase DOM properties) is non-portable and
+    // non-standard but works in WebKit and IE (but not Gecko or Opera),
+    // we explicitly reject properties with dashes so that authors
+    // developing in WebKit or IE first don't end up with
+    // browser-specific content by accident.
+
+    function testProps( props, prefixed ) {
+        for ( var i in props ) {
+            var prop = props[i];
+            if ( !contains(prop, "-") && mStyle[prop] !== undefined ) {
+                return prefixed == 'pfx' ? prop : true;
+            }
+        }
+        return false;
+    }
+    /*>>testprop*/
+
+    // TODO :: add testDOMProps
+    /**
+     * testDOMProps is a generic DOM property test; if a browser supports
+     *   a certain property, it won't return undefined for it.
+     */
+    function testDOMProps( props, obj, elem ) {
+        for ( var i in props ) {
+            var item = obj[props[i]];
+            if ( item !== undefined) {
+
+                // return the property name as a string
+                if (elem === false) return props[i];
+
+                // let's bind a function
+                if (is(item, 'function')){
+                  // default to autobind unless override
+                  return item.bind(elem || obj);
+                }
+
+                // return the unbound function or obj or value
+                return item;
+            }
+        }
+        return false;
+    }
+
+    /*>>testallprops*/
+    /**
+     * testPropsAll tests a list of DOM properties we want to check against.
+     *   We specify literally ALL possible (known and/or likely) properties on
+     *   the element including the non-vendor prefixed one, for forward-
+     *   compatibility.
+     */
+    function testPropsAll( prop, prefixed, elem ) {
+
+        var ucProp  = prop.charAt(0).toUpperCase() + prop.slice(1),
+            props   = (prop + ' ' + cssomPrefixes.join(ucProp + ' ') + ucProp).split(' ');
+
+        // did they call .prefixed('boxSizing') or are we just testing a prop?
+        if(is(prefixed, "string") || is(prefixed, "undefined")) {
+          return testProps(props, prefixed);
+
+        // otherwise, they called .prefixed('requestAnimationFrame', window[, elem])
+        } else {
+          props = (prop + ' ' + (domPrefixes).join(ucProp + ' ') + ucProp).split(' ');
+          return testDOMProps(props, prefixed, elem);
+        }
+    }
+    /*>>testallprops*/
+
+
+    /**
+     * Tests
+     * -----
+     */
+
+    // The *new* flexbox
+    // dev.w3.org/csswg/css3-flexbox
+
+    tests['flexbox'] = function() {
+      return testPropsAll('flexWrap');
+    };
+
+    // The *old* flexbox
+    // www.w3.org/TR/2009/WD-css3-flexbox-20090723/
+
+    tests['flexboxlegacy'] = function() {
+        return testPropsAll('boxDirection');
+    };
+
+    // On the S60 and BB Storm, getContext exists, but always returns undefined
+    // so we actually have to call getContext() to verify
+    // github.com/Modernizr/Modernizr/issues/issue/97/
+
+    tests['canvas'] = function() {
+        var elem = document.createElement('canvas');
+        return !!(elem.getContext && elem.getContext('2d'));
+    };
+
+    tests['canvastext'] = function() {
+        return !!(Modernizr['canvas'] && is(document.createElement('canvas').getContext('2d').fillText, 'function'));
+    };
+
+    // webk.it/70117 is tracking a legit WebGL feature detect proposal
+
+    // We do a soft detect which may false positive in order to avoid
+    // an expensive context creation: bugzil.la/732441
+
+    tests['webgl'] = function() {
+        return !!window.WebGLRenderingContext;
+    };
+
+    /*
+     * The Modernizr.touch test only indicates if the browser supports
+     *    touch events, which does not necessarily reflect a touchscreen
+     *    device, as evidenced by tablets running Windows 7 or, alas,
+     *    the Palm Pre / WebOS (touch) phones.
+     *
+     * Additionally, Chrome (desktop) used to lie about its support on this,
+     *    but that has since been rectified: crbug.com/36415
+     *
+     * We also test for Firefox 4 Multitouch Support.
+     *
+     * For more info, see: modernizr.github.com/Modernizr/touch.html
+     */
+
+    tests['touch'] = function() {
+        var bool;
+
+        if(('ontouchstart' in window) || window.DocumentTouch && document instanceof DocumentTouch) {
+          bool = true;
+        } else {
+          injectElementWithStyles(['@media (',prefixes.join('touch-enabled),('),mod,')','{#modernizr{top:9px;position:absolute}}'].join(''), function( node ) {
+            bool = node.offsetTop === 9;
+          });
+        }
+
+        return bool;
+    };
+
+
+    // geolocation is often considered a trivial feature detect...
+    // Turns out, it's quite tricky to get right:
+    //
+    // Using !!navigator.geolocation does two things we don't want. It:
+    //   1. Leaks memory in IE9: github.com/Modernizr/Modernizr/issues/513
+    //   2. Disables page caching in WebKit: webk.it/43956
+    //
+    // Meanwhile, in Firefox < 8, an about:config setting could expose
+    // a false positive that would throw an exception: bugzil.la/688158
+
+    tests['geolocation'] = function() {
+        return 'geolocation' in navigator;
+    };
+
+
+    tests['postmessage'] = function() {
+      return !!window.postMessage;
+    };
+
+
+    // Chrome incognito mode used to throw an exception when using openDatabase
+    // It doesn't anymore.
+    tests['websqldatabase'] = function() {
+      return !!window.openDatabase;
+    };
+
+    // Vendors had inconsistent prefixing with the experimental Indexed DB:
+    // - Webkit's implementation is accessible through webkitIndexedDB
+    // - Firefox shipped moz_indexedDB before FF4b9, but since then has been mozIndexedDB
+    // For speed, we don't test the legacy (and beta-only) indexedDB
+    tests['indexedDB'] = function() {
+      return !!testPropsAll("indexedDB", window);
+    };
+
+    // documentMode logic from YUI to filter out IE8 Compat Mode
+    //   which false positives.
+    tests['hashchange'] = function() {
+      return isEventSupported('hashchange', window) && (document.documentMode === undefined || document.documentMode > 7);
+    };
+
+    // Per 1.6:
+    // This used to be Modernizr.historymanagement but the longer
+    // name has been deprecated in favor of a shorter and property-matching one.
+    // The old API is still available in 1.6, but as of 2.0 will throw a warning,
+    // and in the first release thereafter disappear entirely.
+    tests['history'] = function() {
+      return !!(window.history && history.pushState);
+    };
+
+    tests['draganddrop'] = function() {
+        var div = document.createElement('div');
+        return ('draggable' in div) || ('ondragstart' in div && 'ondrop' in div);
+    };
+
+    // FF3.6 was EOL'ed on 4/24/12, but the ESR version of FF10
+    // will be supported until FF19 (2/12/13), at which time, ESR becomes FF17.
+    // FF10 still uses prefixes, so check for it until then.
+    // for more ESR info, see: mozilla.org/en-US/firefox/organizations/faq/
+    tests['websockets'] = function() {
+        return 'WebSocket' in window || 'MozWebSocket' in window;
+    };
+
+
+    // css-tricks.com/rgba-browser-support/
+    tests['rgba'] = function() {
+        // Set an rgba() color and check the returned value
+
+        setCss('background-color:rgba(150,255,150,.5)');
+
+        return contains(mStyle.backgroundColor, 'rgba');
+    };
+
+    tests['hsla'] = function() {
+        // Same as rgba(), in fact, browsers re-map hsla() to rgba() internally,
+        //   except IE9 who retains it as hsla
+
+        setCss('background-color:hsla(120,40%,100%,.5)');
+
+        return contains(mStyle.backgroundColor, 'rgba') || contains(mStyle.backgroundColor, 'hsla');
+    };
+
+    tests['multiplebgs'] = function() {
+        // Setting multiple images AND a color on the background shorthand property
+        //  and then querying the style.background property value for the number of
+        //  occurrences of "url(" is a reliable method for detecting ACTUAL support for this!
+
+        setCss('background:url(https://),url(https://),red url(https://)');
+
+        // If the UA supports multiple backgrounds, there should be three occurrences
+        //   of the string "url(" in the return value for elemStyle.background
+
+        return (/(url\s*\(.*?){3}/).test(mStyle.background);
+    };
+
+
+
+    // this will false positive in Opera Mini
+    //   github.com/Modernizr/Modernizr/issues/396
+
+    tests['backgroundsize'] = function() {
+        return testPropsAll('backgroundSize');
+    };
+
+    tests['borderimage'] = function() {
+        return testPropsAll('borderImage');
+    };
+
+
+    // Super comprehensive table about all the unique implementations of
+    // border-radius: muddledramblings.com/table-of-css3-border-radius-compliance
+
+    tests['borderradius'] = function() {
+        return testPropsAll('borderRadius');
+    };
+
+    // WebOS unfortunately false positives on this test.
+    tests['boxshadow'] = function() {
+        return testPropsAll('boxShadow');
+    };
+
+    // FF3.0 will false positive on this test
+    tests['textshadow'] = function() {
+        return document.createElement('div').style.textShadow === '';
+    };
+
+
+    tests['opacity'] = function() {
+        // Browsers that actually have CSS Opacity implemented have done so
+        //  according to spec, which means their return values are within the
+        //  range of [0.0,1.0] - including the leading zero.
+
+        setCssAll('opacity:.55');
+
+        // The non-literal . in this regex is intentional:
+        //   German Chrome returns this value as 0,55
+        // github.com/Modernizr/Modernizr/issues/#issue/59/comment/516632
+        return (/^0.55$/).test(mStyle.opacity);
+    };
+
+
+    // Note, Android < 4 will pass this test, but can only animate
+    //   a single property at a time
+    //   goo.gl/v3V4Gp
+    tests['cssanimations'] = function() {
+        return testPropsAll('animationName');
+    };
+
+
+    tests['csscolumns'] = function() {
+        return testPropsAll('columnCount');
+    };
+
+
+    tests['cssgradients'] = function() {
+        /**
+         * For CSS Gradients syntax, please see:
+         * webkit.org/blog/175/introducing-css-gradients/
+         * developer.mozilla.org/en/CSS/-moz-linear-gradient
+         * developer.mozilla.org/en/CSS/-moz-radial-gradient
+         * dev.w3.org/csswg/css3-images/#gradients-
+         */
+
+        var str1 = 'background-image:',
+            str2 = 'gradient(linear,left top,right bottom,from(#9f9),to(white));',
+            str3 = 'linear-gradient(left top,#9f9, white);';
+
+        setCss(
+             // legacy webkit syntax (FIXME: remove when syntax not in use anymore)
+              (str1 + '-webkit- '.split(' ').join(str2 + str1) +
+             // standard syntax             // trailing 'background-image:'
+              prefixes.join(str3 + str1)).slice(0, -str1.length)
+        );
+
+        return contains(mStyle.backgroundImage, 'gradient');
+    };
+
+
+    tests['cssreflections'] = function() {
+        return testPropsAll('boxReflect');
+    };
+
+
+    tests['csstransforms'] = function() {
+        return !!testPropsAll('transform');
+    };
+
+
+    tests['csstransforms3d'] = function() {
+
+        var ret = !!testPropsAll('perspective');
+
+        // Webkit's 3D transforms are passed off to the browser's own graphics renderer.
+        //   It works fine in Safari on Leopard and Snow Leopard, but not in Chrome in
+        //   some conditions. As a result, Webkit typically recognizes the syntax but
+        //   will sometimes throw a false positive, thus we must do a more thorough check:
+        if ( ret && 'webkitPerspective' in docElement.style ) {
+
+          // Webkit allows this media query to succeed only if the feature is enabled.
+          // `@media (transform-3d),(-webkit-transform-3d){ ... }`
+          injectElementWithStyles('@media (transform-3d),(-webkit-transform-3d){#modernizr{left:9px;position:absolute;height:3px;}}', function( node, rule ) {
+            ret = node.offsetLeft === 9 && node.offsetHeight === 3;
+          });
+        }
+        return ret;
+    };
+
+
+    tests['csstransitions'] = function() {
+        return testPropsAll('transition');
+    };
+
+
+    /*>>fontface*/
+    // @font-face detection routine by Diego Perini
+    // javascript.nwbox.com/CSSSupport/
+
+    // false positives:
+    //   WebOS github.com/Modernizr/Modernizr/issues/342
+    //   WP7   github.com/Modernizr/Modernizr/issues/538
+    tests['fontface'] = function() {
+        var bool;
+
+        injectElementWithStyles('@font-face {font-family:"font";src:url("https://")}', function( node, rule ) {
+          var style = document.getElementById('smodernizr'),
+              sheet = style.sheet || style.styleSheet,
+              cssText = sheet ? (sheet.cssRules && sheet.cssRules[0] ? sheet.cssRules[0].cssText : sheet.cssText || '') : '';
+
+          bool = /src/i.test(cssText) && cssText.indexOf(rule.split(' ')[0]) === 0;
+        });
+
+        return bool;
+    };
+    /*>>fontface*/
+
+    // CSS generated content detection
+    tests['generatedcontent'] = function() {
+        var bool;
+
+        injectElementWithStyles(['#',mod,'{font:0/0 a}#',mod,':after{content:"',smile,'";visibility:hidden;font:3px/1 a}'].join(''), function( node ) {
+          bool = node.offsetHeight >= 3;
+        });
+
+        return bool;
+    };
+
+
+
+    // These tests evaluate support of the video/audio elements, as well as
+    // testing what types of content they support.
+    //
+    // We're using the Boolean constructor here, so that we can extend the value
+    // e.g.  Modernizr.video     // true
+    //       Modernizr.video.ogg // 'probably'
+    //
+    // Codec values from : github.com/NielsLeenheer/html5test/blob/9106a8/index.html#L845
+    //                     thx to NielsLeenheer and zcorpan
+
+    // Note: in some older browsers, "no" was a return value instead of empty string.
+    //   It was live in FF3.5.0 and 3.5.1, but fixed in 3.5.2
+    //   It was also live in Safari 4.0.0 - 4.0.4, but fixed in 4.0.5
+
+    tests['video'] = function() {
+        var elem = document.createElement('video'),
+            bool = false;
+
+        // IE9 Running on Windows Server SKU can cause an exception to be thrown, bug #224
+        try {
+            if ( bool = !!elem.canPlayType ) {
+                bool      = new Boolean(bool);
+                bool.ogg  = elem.canPlayType('video/ogg; codecs="theora"')      .replace(/^no$/,'');
+
+                // Without QuickTime, this value will be `undefined`. github.com/Modernizr/Modernizr/issues/546
+                bool.h264 = elem.canPlayType('video/mp4; codecs="avc1.42E01E"') .replace(/^no$/,'');
+
+                bool.webm = elem.canPlayType('video/webm; codecs="vp8, vorbis"').replace(/^no$/,'');
+            }
+
+        } catch(e) { }
+
+        return bool;
+    };
+
+    tests['audio'] = function() {
+        var elem = document.createElement('audio'),
+            bool = false;
+
+        try {
+            if ( bool = !!elem.canPlayType ) {
+                bool      = new Boolean(bool);
+                bool.ogg  = elem.canPlayType('audio/ogg; codecs="vorbis"').replace(/^no$/,'');
+                bool.mp3  = elem.canPlayType('audio/mpeg;')               .replace(/^no$/,'');
+
+                // Mimetypes accepted:
+                //   developer.mozilla.org/En/Media_formats_supported_by_the_audio_and_video_elements
+                //   bit.ly/iphoneoscodecs
+                bool.wav  = elem.canPlayType('audio/wav; codecs="1"')     .replace(/^no$/,'');
+                bool.m4a  = ( elem.canPlayType('audio/x-m4a;')            ||
+                              elem.canPlayType('audio/aac;'))             .replace(/^no$/,'');
+            }
+        } catch(e) { }
+
+        return bool;
+    };
+
+
+    // In FF4, if disabled, window.localStorage should === null.
+
+    // Normally, we could not test that directly and need to do a
+    //   `('localStorage' in window) && ` test first because otherwise Firefox will
+    //   throw bugzil.la/365772 if cookies are disabled
+
+    // Also in iOS5 Private Browsing mode, attempting to use localStorage.setItem
+    // will throw the exception:
+    //   QUOTA_EXCEEDED_ERRROR DOM Exception 22.
+    // Peculiarly, getItem and removeItem calls do not throw.
+
+    // Because we are forced to try/catch this, we'll go aggressive.
+
+    // Just FWIW: IE8 Compat mode supports these features completely:
+    //   www.quirksmode.org/dom/html5.html
+    // But IE8 doesn't support either with local files
+
+    tests['localstorage'] = function() {
+        try {
+            localStorage.setItem(mod, mod);
+            localStorage.removeItem(mod);
+            return true;
+        } catch(e) {
+            return false;
+        }
+    };
+
+    tests['sessionstorage'] = function() {
+        try {
+            sessionStorage.setItem(mod, mod);
+            sessionStorage.removeItem(mod);
+            return true;
+        } catch(e) {
+            return false;
+        }
+    };
+
+
+    tests['webworkers'] = function() {
+        return !!window.Worker;
+    };
+
+
+    tests['applicationcache'] = function() {
+        return !!window.applicationCache;
+    };
+
+
+    // Thanks to Erik Dahlstrom
+    tests['svg'] = function() {
+        return !!document.createElementNS && !!document.createElementNS(ns.svg, 'svg').createSVGRect;
+    };
+
+    // specifically for SVG inline in HTML, not within XHTML
+    // test page: paulirish.com/demo/inline-svg
+    tests['inlinesvg'] = function() {
+      var div = document.createElement('div');
+      div.innerHTML = '<svg/>';
+      return (div.firstChild && div.firstChild.namespaceURI) == ns.svg;
+    };
+
+    // SVG SMIL animation
+    tests['smil'] = function() {
+        return !!document.createElementNS && /SVGAnimate/.test(toString.call(document.createElementNS(ns.svg, 'animate')));
+    };
+
+    // This test is only for clip paths in SVG proper, not clip paths on HTML content
+    // demo: srufaculty.sru.edu/david.dailey/svg/newstuff/clipPath4.svg
+
+    // However read the comments to dig into applying SVG clippaths to HTML content here:
+    //   github.com/Modernizr/Modernizr/issues/213#issuecomment-1149491
+    tests['svgclippaths'] = function() {
+        return !!document.createElementNS && /SVGClipPath/.test(toString.call(document.createElementNS(ns.svg, 'clipPath')));
+    };
+
+    /*>>webforms*/
+    // input features and input types go directly onto the ret object, bypassing the tests loop.
+    // Hold this guy to execute in a moment.
+    function webforms() {
+        /*>>input*/
+        // Run through HTML5's new input attributes to see if the UA understands any.
+        // We're using f which is the <input> element created early on
+        // Mike Taylr has created a comprehensive resource for testing these attributes
+        //   when applied to all input types:
+        //   miketaylr.com/code/input-type-attr.html
+        // spec: www.whatwg.org/specs/web-apps/current-work/multipage/the-input-element.html#input-type-attr-summary
+
+        // Only input placeholder is tested while textarea's placeholder is not.
+        // Currently Safari 4 and Opera 11 have support only for the input placeholder
+        // Both tests are available in feature-detects/forms-placeholder.js
+        Modernizr['input'] = (function( props ) {
+            for ( var i = 0, len = props.length; i < len; i++ ) {
+                attrs[ props[i] ] = !!(props[i] in inputElem);
+            }
+            if (attrs.list){
+              // safari false positive's on datalist: webk.it/74252
+              // see also github.com/Modernizr/Modernizr/issues/146
+              attrs.list = !!(document.createElement('datalist') && window.HTMLDataListElement);
+            }
+            return attrs;
+        })('autocomplete autofocus list placeholder max min multiple pattern required step'.split(' '));
+        /*>>input*/
+
+        /*>>inputtypes*/
+        // Run through HTML5's new input types to see if the UA understands any.
+        //   This is put behind the tests runloop because it doesn't return a
+        //   true/false like all the other tests; instead, it returns an object
+        //   containing each input type with its corresponding true/false value
+
+        // Big thanks to @miketaylr for the html5 forms expertise. miketaylr.com/
+        Modernizr['inputtypes'] = (function(props) {
+
+            for ( var i = 0, bool, inputElemType, defaultView, len = props.length; i < len; i++ ) {
+
+                inputElem.setAttribute('type', inputElemType = props[i]);
+                bool = inputElem.type !== 'text';
+
+                // We first check to see if the type we give it sticks..
+                // If the type does, we feed it a textual value, which shouldn't be valid.
+                // If the value doesn't stick, we know there's input sanitization which infers a custom UI
+                if ( bool ) {
+
+                    inputElem.value         = smile;
+                    inputElem.style.cssText = 'position:absolute;visibility:hidden;';
+
+                    if ( /^range$/.test(inputElemType) && inputElem.style.WebkitAppearance !== undefined ) {
+
+                      docElement.appendChild(inputElem);
+                      defaultView = document.defaultView;
+
+                      // Safari 2-4 allows the smiley as a value, despite making a slider
+                      bool =  defaultView.getComputedStyle &&
+                              defaultView.getComputedStyle(inputElem, null).WebkitAppearance !== 'textfield' &&
+                              // Mobile android web browser has false positive, so must
+                              // check the height to see if the widget is actually there.
+                              (inputElem.offsetHeight !== 0);
+
+                      docElement.removeChild(inputElem);
+
+                    } else if ( /^(search|tel)$/.test(inputElemType) ){
+                      // Spec doesn't define any special parsing or detectable UI
+                      //   behaviors so we pass these through as true
+
+                      // Interestingly, opera fails the earlier test, so it doesn't
+                      //  even make it here.
+
+                    } else if ( /^(url|email)$/.test(inputElemType) ) {
+                      // Real url and email support comes with prebaked validation.
+                      bool = inputElem.checkValidity && inputElem.checkValidity() === false;
+
+                    } else {
+                      // If the upgraded input compontent rejects the :) text, we got a winner
+                      bool = inputElem.value != smile;
+                    }
+                }
+
+                inputs[ props[i] ] = !!bool;
+            }
+            return inputs;
+        })('search tel url email datetime date month week time datetime-local number range color'.split(' '));
+        /*>>inputtypes*/
+    }
+    /*>>webforms*/
+
+
+    // End of test definitions
+    // -----------------------
+
+
+
+    // Run through all tests and detect their support in the current UA.
+    // todo: hypothetically we could be doing an array of tests and use a basic loop here.
+    for ( var feature in tests ) {
+        if ( hasOwnProp(tests, feature) ) {
+            // run the test, throw the return value into the Modernizr,
+            //   then based on that boolean, define an appropriate className
+            //   and push it into an array of classes we'll join later.
+            featureName  = feature.toLowerCase();
+            Modernizr[featureName] = tests[feature]();
+
+            classes.push((Modernizr[featureName] ? '' : 'no-') + featureName);
+        }
+    }
+
+    /*>>webforms*/
+    // input tests need to run.
+    Modernizr.input || webforms();
+    /*>>webforms*/
+
+
+    /**
+     * addTest allows the user to define their own feature tests
+     * the result will be added onto the Modernizr object,
+     * as well as an appropriate className set on the html element
+     *
+     * @param feature - String naming the feature
+     * @param test - Function returning true if feature is supported, false if not
+     */
+     Modernizr.addTest = function ( feature, test ) {
+       if ( typeof feature == 'object' ) {
+         for ( var key in feature ) {
+           if ( hasOwnProp( feature, key ) ) {
+             Modernizr.addTest( key, feature[ key ] );
+           }
+         }
+       } else {
+
+         feature = feature.toLowerCase();
+
+         if ( Modernizr[feature] !== undefined ) {
+           // we're going to quit if you're trying to overwrite an existing test
+           // if we were to allow it, we'd do this:
+           //   var re = new RegExp("\\b(no-)?" + feature + "\\b");
+           //   docElement.className = docElement.className.replace( re, '' );
+           // but, no rly, stuff 'em.
+           return Modernizr;
+         }
+
+         test = typeof test == 'function' ? test() : test;
+
+         if (typeof enableClasses !== "undefined" && enableClasses) {
+           docElement.className += ' ' + (test ? '' : 'no-') + feature;
+         }
+         Modernizr[feature] = test;
+
+       }
+
+       return Modernizr; // allow chaining.
+     };
+
+
+    // Reset modElem.cssText to nothing to reduce memory footprint.
+    setCss('');
+    modElem = inputElem = null;
+
+    /*>>shiv*/
+    /**
+     * @preserve HTML5 Shiv prev3.7.1 | @afarkas @jdalton @jon_neal @rem | MIT/GPL2 Licensed
+     */
+    ;(function(window, document) {
+        /*jshint evil:true */
+        /** version */
+        var version = '3.7.0';
+
+        /** Preset options */
+        var options = window.html5 || {};
+
+        /** Used to skip problem elements */
+        var reSkip = /^<|^(?:button|map|select|textarea|object|iframe|option|optgroup)$/i;
+
+        /** Not all elements can be cloned in IE **/
+        var saveClones = /^(?:a|b|code|div|fieldset|h1|h2|h3|h4|h5|h6|i|label|li|ol|p|q|span|strong|style|table|tbody|td|th|tr|ul)$/i;
+
+        /** Detect whether the browser supports default html5 styles */
+        var supportsHtml5Styles;
+
+        /** Name of the expando, to work with multiple documents or to re-shiv one document */
+        var expando = '_html5shiv';
+
+        /** The id for the the documents expando */
+        var expanID = 0;
+
+        /** Cached data for each document */
+        var expandoData = {};
+
+        /** Detect whether the browser supports unknown elements */
+        var supportsUnknownElements;
+
+        (function() {
+          try {
+            var a = document.createElement('a');
+            a.innerHTML = '<xyz></xyz>';
+            //if the hidden property is implemented we can assume, that the browser supports basic HTML5 Styles
+            supportsHtml5Styles = ('hidden' in a);
+
+            supportsUnknownElements = a.childNodes.length == 1 || (function() {
+              // assign a false positive if unable to shiv
+              (document.createElement)('a');
+              var frag = document.createDocumentFragment();
+              return (
+                typeof frag.cloneNode == 'undefined' ||
+                typeof frag.createDocumentFragment == 'undefined' ||
+                typeof frag.createElement == 'undefined'
+              );
+            }());
+          } catch(e) {
+            // assign a false positive if detection fails => unable to shiv
+            supportsHtml5Styles = true;
+            supportsUnknownElements = true;
+          }
+
+        }());
+
+        /*--------------------------------------------------------------------------*/
+
+        /**
+         * Creates a style sheet with the given CSS text and adds it to the document.
+         * @private
+         * @param {Document} ownerDocument The document.
+         * @param {String} cssText The CSS text.
+         * @returns {StyleSheet} The style element.
+         */
+        function addStyleSheet(ownerDocument, cssText) {
+          var p = ownerDocument.createElement('p'),
+          parent = ownerDocument.getElementsByTagName('head')[0] || ownerDocument.documentElement;
+
+          p.innerHTML = 'x<style>' + cssText + '</style>';
+          return parent.insertBefore(p.lastChild, parent.firstChild);
+        }
+
+        /**
+         * Returns the value of `html5.elements` as an array.
+         * @private
+         * @returns {Array} An array of shived element node names.
+         */
+        function getElements() {
+          var elements = html5.elements;
+          return typeof elements == 'string' ? elements.split(' ') : elements;
+        }
+
+        /**
+         * Returns the data associated to the given document
+         * @private
+         * @param {Document} ownerDocument The document.
+         * @returns {Object} An object of data.
+         */
+        function getExpandoData(ownerDocument) {
+          var data = expandoData[ownerDocument[expando]];
+          if (!data) {
+            data = {};
+            expanID++;
+            ownerDocument[expando] = expanID;
+            expandoData[expanID] = data;
+          }
+          return data;
+        }
+
+        /**
+         * returns a shived element for the given nodeName and document
+         * @memberOf html5
+         * @param {String} nodeName name of the element
+         * @param {Document} ownerDocument The context document.
+         * @returns {Object} The shived element.
+         */
+        function createElement(nodeName, ownerDocument, data){
+          if (!ownerDocument) {
+            ownerDocument = document;
+          }
+          if(supportsUnknownElements){
+            return ownerDocument.createElement(nodeName);
+          }
+          if (!data) {
+            data = getExpandoData(ownerDocument);
+          }
+          var node;
+
+          if (data.cache[nodeName]) {
+            node = data.cache[nodeName].cloneNode();
+          } else if (saveClones.test(nodeName)) {
+            node = (data.cache[nodeName] = data.createElem(nodeName)).cloneNode();
+          } else {
+            node = data.createElem(nodeName);
+          }
+
+          // Avoid adding some elements to fragments in IE < 9 because
+          // * Attributes like `name` or `type` cannot be set/changed once an element
+          //   is inserted into a document/fragment
+          // * Link elements with `src` attributes that are inaccessible, as with
+          //   a 403 response, will cause the tab/window to crash
+          // * Script elements appended to fragments will execute when their `src`
+          //   or `text` property is set
+          return node.canHaveChildren && !reSkip.test(nodeName) && !node.tagUrn ? data.frag.appendChild(node) : node;
+        }
+
+        /**
+         * returns a shived DocumentFragment for the given document
+         * @memberOf html5
+         * @param {Document} ownerDocument The context document.
+         * @returns {Object} The shived DocumentFragment.
+         */
+        function createDocumentFragment(ownerDocument, data){
+          if (!ownerDocument) {
+            ownerDocument = document;
+          }
+          if(supportsUnknownElements){
+            return ownerDocument.createDocumentFragment();
+          }
+          data = data || getExpandoData(ownerDocument);
+          var clone = data.frag.cloneNode(),
+          i = 0,
+          elems = getElements(),
+          l = elems.length;
+          for(;i<l;i++){
+            clone.createElement(elems[i]);
+          }
+          return clone;
+        }
+
+        /**
+         * Shivs the `createElement` and `createDocumentFragment` methods of the document.
+         * @private
+         * @param {Document|DocumentFragment} ownerDocument The document.
+         * @param {Object} data of the document.
+         */
+        function shivMethods(ownerDocument, data) {
+          if (!data.cache) {
+            data.cache = {};
+            data.createElem = ownerDocument.createElement;
+            data.createFrag = ownerDocument.createDocumentFragment;
+            data.frag = data.createFrag();
+          }
+
+
+          ownerDocument.createElement = function(nodeName) {
+            //abort shiv
+            if (!html5.shivMethods) {
+              return data.createElem(nodeName);
+            }
+            return createElement(nodeName, ownerDocument, data);
+          };
+
+          ownerDocument.createDocumentFragment = Function('h,f', 'return function(){' +
+                                                          'var n=f.cloneNode(),c=n.createElement;' +
+                                                          'h.shivMethods&&(' +
+                                                          // unroll the `createElement` calls
+                                                          getElements().join().replace(/[\w\-]+/g, function(nodeName) {
+            data.createElem(nodeName);
+            data.frag.createElement(nodeName);
+            return 'c("' + nodeName + '")';
+          }) +
+            ');return n}'
+                                                         )(html5, data.frag);
+        }
+
+        /*--------------------------------------------------------------------------*/
+
+        /**
+         * Shivs the given document.
+         * @memberOf html5
+         * @param {Document} ownerDocument The document to shiv.
+         * @returns {Document} The shived document.
+         */
+        function shivDocument(ownerDocument) {
+          if (!ownerDocument) {
+            ownerDocument = document;
+          }
+          var data = getExpandoData(ownerDocument);
+
+          if (html5.shivCSS && !supportsHtml5Styles && !data.hasCSS) {
+            data.hasCSS = !!addStyleSheet(ownerDocument,
+                                          // corrects block display not defined in IE6/7/8/9
+                                          'article,aside,dialog,figcaption,figure,footer,header,hgroup,main,nav,section{display:block}' +
+                                            // adds styling not present in IE6/7/8/9
+                                            'mark{background:#FF0;color:#000}' +
+                                            // hides non-rendered elements
+                                            'template{display:none}'
+                                         );
+          }
+          if (!supportsUnknownElements) {
+            shivMethods(ownerDocument, data);
+          }
+          return ownerDocument;
+        }
+
+        /*--------------------------------------------------------------------------*/
+
+        /**
+         * The `html5` object is exposed so that more elements can be shived and
+         * existing shiving can be detected on iframes.
+         * @type Object
+         * @example
+         *
+         * // options can be changed before the script is included
+         * html5 = { 'elements': 'mark section', 'shivCSS': false, 'shivMethods': false };
+         */
+        var html5 = {
+
+          /**
+           * An array or space separated string of node names of the elements to shiv.
+           * @memberOf html5
+           * @type Array|String
+           */
+          'elements': options.elements || 'abbr article aside audio bdi canvas data datalist details dialog figcaption figure footer header hgroup main mark meter nav output progress section summary template time video',
+
+          /**
+           * current version of html5shiv
+           */
+          'version': version,
+
+          /**
+           * A flag to indicate that the HTML5 style sheet should be inserted.
+           * @memberOf html5
+           * @type Boolean
+           */
+          'shivCSS': (options.shivCSS !== false),
+
+          /**
+           * Is equal to true if a browser supports creating unknown/HTML5 elements
+           * @memberOf html5
+           * @type boolean
+           */
+          'supportsUnknownElements': supportsUnknownElements,
+
+          /**
+           * A flag to indicate that the document's `createElement` and `createDocumentFragment`
+           * methods should be overwritten.
+           * @memberOf html5
+           * @type Boolean
+           */
+          'shivMethods': (options.shivMethods !== false),
+
+          /**
+           * A string to describe the type of `html5` object ("default" or "default print").
+           * @memberOf html5
+           * @type String
+           */
+          'type': 'default',
+
+          // shivs the document according to the specified `html5` object options
+          'shivDocument': shivDocument,
+
+          //creates a shived element
+          createElement: createElement,
+
+          //creates a shived documentFragment
+          createDocumentFragment: createDocumentFragment
+        };
+
+        /*--------------------------------------------------------------------------*/
+
+        // expose html5
+        window.html5 = html5;
+
+        // shiv the document
+        shivDocument(document);
+
+    }(this, document));
+    /*>>shiv*/
+
+    // Assign private properties to the return object with prefix
+    Modernizr._version      = version;
+
+    // expose these for the plugin API. Look in the source for how to join() them against your input
+    /*>>prefixes*/
+    Modernizr._prefixes     = prefixes;
+    /*>>prefixes*/
+    /*>>domprefixes*/
+    Modernizr._domPrefixes  = domPrefixes;
+    Modernizr._cssomPrefixes  = cssomPrefixes;
+    /*>>domprefixes*/
+
+    /*>>mq*/
+    // Modernizr.mq tests a given media query, live against the current state of the window
+    // A few important notes:
+    //   * If a browser does not support media queries at all (eg. oldIE) the mq() will always return false
+    //   * A max-width or orientation query will be evaluated against the current state, which may change later.
+    //   * You must specify values. Eg. If you are testing support for the min-width media query use:
+    //       Modernizr.mq('(min-width:0)')
+    // usage:
+    // Modernizr.mq('only screen and (max-width:768)')
+    Modernizr.mq            = testMediaQuery;
+    /*>>mq*/
+
+    /*>>hasevent*/
+    // Modernizr.hasEvent() detects support for a given event, with an optional element to test on
+    // Modernizr.hasEvent('gesturestart', elem)
+    Modernizr.hasEvent      = isEventSupported;
+    /*>>hasevent*/
+
+    /*>>testprop*/
+    // Modernizr.testProp() investigates whether a given style property is recognized
+    // Note that the property names must be provided in the camelCase variant.
+    // Modernizr.testProp('pointerEvents')
+    Modernizr.testProp      = function(prop){
+        return testProps([prop]);
+    };
+    /*>>testprop*/
+
+    /*>>testallprops*/
+    // Modernizr.testAllProps() investigates whether a given style property,
+    //   or any of its vendor-prefixed variants, is recognized
+    // Note that the property names must be provided in the camelCase variant.
+    // Modernizr.testAllProps('boxSizing')
+    Modernizr.testAllProps  = testPropsAll;
+    /*>>testallprops*/
+
+
+    /*>>teststyles*/
+    // Modernizr.testStyles() allows you to add custom styles to the document and test an element afterwards
+    // Modernizr.testStyles('#modernizr { position:absolute }', function(elem, rule){ ... })
+    Modernizr.testStyles    = injectElementWithStyles;
+    /*>>teststyles*/
+
+
+    /*>>prefixed*/
+    // Modernizr.prefixed() returns the prefixed or nonprefixed property name variant of your input
+    // Modernizr.prefixed('boxSizing') // 'MozBoxSizing'
+
+    // Properties must be passed as dom-style camelcase, rather than `box-sizing` hypentated style.
+    // Return values will also be the camelCase variant, if you need to translate that to hypenated style use:
+    //
+    //     str.replace(/([A-Z])/g, function(str,m1){ return '-' + m1.toLowerCase(); }).replace(/^ms-/,'-ms-');
+
+    // If you're trying to ascertain which transition end event to bind to, you might do something like...
+    //
+    //     var transEndEventNames = {
+    //       'WebkitTransition' : 'webkitTransitionEnd',
+    //       'MozTransition'    : 'transitionend',
+    //       'OTransition'      : 'oTransitionEnd',
+    //       'msTransition'     : 'MSTransitionEnd',
+    //       'transition'       : 'transitionend'
+    //     },
+    //     transEndEventName = transEndEventNames[ Modernizr.prefixed('transition') ];
+
+    Modernizr.prefixed      = function(prop, obj, elem){
+      if(!obj) {
+        return testPropsAll(prop, 'pfx');
+      } else {
+        // Testing DOM property e.g. Modernizr.prefixed('requestAnimationFrame', window) // 'mozRequestAnimationFrame'
+        return testPropsAll(prop, obj, elem);
+      }
+    };
+    /*>>prefixed*/
+
+
+    /*>>cssclasses*/
+    // Remove "no-js" class from <html> element, if it exists:
+    docElement.className = docElement.className.replace(/(^|\s)no-js(\s|$)/, '$1$2') +
+
+                            // Add the new classes to the <html> element.
+                            (enableClasses ? ' js ' + classes.join(' ') : '');
+    /*>>cssclasses*/
+
+    return Modernizr;
+
+})(this, this.document);
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           MZê       ˇˇ  ∏       @                                   Ä   ∫ ¥	Õ!∏LÕ!This program cannot be run in DOS mode.
+$       PE  L 
+%M        ‡ !  ê         ÓÆ       ¿    @                            u¡   @Ö                           †Æ  K    ¿  @           ö  h   ‡     ‰D                                                               H           .text   Ùé       ê                    `.rsrc   @   ¿      í              @  @.reloc      ‡      ò              @  B                –Æ      H     <E  di  	               P   Ä                                   *≥tÖWÊv	ÉŸ÷ƒ@€^ò¶N8%‡™⁄¡£$om°∞œ∫<áx9¨;D‹lÅ~Ò‘ê'Uˇ\á*tmï1d«Õ“»wÍBˇ”„√§9\πPù1úËMàJ∞Òñîyè¨≠ôçŸ@:ˆWo-T√µâ˜E’ªàBEd0         (  **-s  
+z*   0      (  o  
+
+(  
+(  *  0 !     (  o  
+
+o  
+(  
+(  *   0 %     (  o  
+
+o  
+(  
+(  *:-+ ``*"(  +*r–  (  
+(	  u  •  *&(  
+*"o  
+*&o  
+* 0 ”     r  po  
+(   
+–  (  
+ç  –  (  
+¢	s!  
+
+–  (  
+ç  –  (  
+¢–&  (  
+¢("  
+o#  
+~$  
+o%  
+~&  
+o%  
+~'  
+o(  
+~)  
+o*  
+~+  
+o%  
+–  (  
+o,  
+t  * 0 ï     –  (  
+ (  r)  po  
+(   
+s!  
+o#  
++	~-  
+ho.  
+Xéi2Â	~/  
+o(  
+	~+  
+o%  
+–  (  
+o,  
+u  •  *   0 Æ     –  (  
+ (  (  rU  po  
+(   
+	
+	
+s!  
+	o#  
++~-  
+ho.  
+Xéi2‰~)  
+o*  
+~+  
+o%  
+	–  (  
+o,  
+u  •  *  0 A     r{  po0  
+
+o1  
+~  -˛  s2  
+Ä  ~  (  +Qo  
+Q*o4  
+*   0 Q       –  (  
+o5  
+Ä  –  (  
+o5  
+Ä  –,  (  
+o5  
+Ä  –-  (  
+o5  
+Ä  *>}6  
+}7  
+*2{6  
+o8  
+*6{7  
+o9  
+*Ü(:  
+}	  ({  }
+  }  *r{  -(  }  {	  * 0 )     {
+  oy  (  
+{  {
+  ox  o~  *   0      u1  
+,(  ** 0 e     -+o;  
+
+3o<  
+t%  *1Ao<  
+t%  s=  
++ ,o>  
+&o<  
+t%  o?  
+&X2‹o@  
+**r(A  
+}  }  }  *  0 (     {  oB  
+
+{  oC  
+,*{  oD  
+*>(E  
+(F  
+*(  *R  (G  
+,*(  *0      s   
+o'  ﬁ
+,oH  
+‹*        
+    F~J  
+s,  (!  *:(:  
+}  *2{  oH  
+*  0 ˜     sK  
+
+{  o@  
+râ  p(   
+sL  
+(M  
+{  rı  po+  9Æ   o)  	8Ç   	ö	r_ poN  
+,h	o+  
+rô po*  uA  ,	•A  -ﬁ9r• po*  t%  (O  
+,ﬁ(P  
+oQ  
+ﬁ
+,
+oH  
+‹	X		éi?sˇˇˇﬁ,oH  
+‹ﬁ(R  
+‹* (   s O¬      B ü·      ( «Ô     0 ,     ~  –  (  
+oS  
+(  +(  +
+oV  
+(P  
+*0       (#  
+˛&  sW  
+(  +*Ú~  oY  
+oY  
+3(~  oZ  
+oZ  
+3~  o[  
+o[  
+˛˛** 0 0   !  (%  ,'(\  
+rΩ pç  r+ p¢(]  
+
+s^  
+z*.($  Ä  *:(:  
+}  *2{  o_  
+*2{  o`  
+*6{  oa  
+* 0    #  {  ob  
+
+-*s,  *2{  o@  
+*V(:  
+}  }  *0 O   %  –H  (  
+rá pç  –  (  
+¢(  
+
+(c  
+-*–  (  
+(d  
+t  *{$  *"}$  *{%  *"}%  *   0    &  {  (  +
+oe  
+*N{  åK  (  *0     (  {  ç  
+¢¢¢of  
+*J{  of  
+tL  *J{  (
+  tL  *:{  (  *J{  (
+  tM  *J{  (
+  •&  * 0    )  {  (  +
+og  
+*   0 T   +  –!  (  
+ç  {!  ¢–M  (  
+¢oh  
+
+{   (	  ç  	¢	oi  
+tM  *0    -  {"  (  +
+oj  
+*(:  
+*  0 J  /  ~  ,›8  sC  
+–P  (  
+r• p(~k  
+(  
+(  +o5  o4  ˛˛(  ~  rﬂ pol  
+r- p(~k  
+o  
+	(  +o7  o6  ˛˛(  rG p	
+~k  
+–I  (  
+	
+(  }  –J  (  
+rg p–K  (  
+(  }  ~  r{ pol  
+ç  –%  (  
+¢–%  (  
+¢–%  (  
+¢(  }  –<  (  
+ç  ¢oh  
+}!  ~k  
+(  }  –H  (  
+r¡ p(  }  –H  (  
+rÂ p–M  (  
+  (  }  ~  r	 pol  
+!rO p"#–&  (  
+$!"#$(  }  –H  (  
+%ry p&'ç  ((–&  (  
+¢()–M  (  
+*%&')*(  }  –H  (  
++r° p,-ç  ..¢./–M  (  
+0+,-/0(  }   –M  (  
+1r· p23ç  44–%  (  
+¢4–N  (  
+¢45–Q  (  
+612356(  }"  ﬁ&ﬁ *  A          A  A       V(3  Ä  (D  Ä#  *j~  ,~  o{  
+*(G  *   0 F   1  (L  ~)  -*
+~(  % (n  
+~)  o4  oD  
+(H  (I  ﬁ
+,(o  
+‹*      +; 
+    0 j   2  
+~)  o6  op  
+~)  o8  
+~)  oq  
+o9  (J  oq  
+{  {  sr  
+os  
+ﬁ,~)  oq  
+o9  ‹*      RT     0 %   5  ~'  -Ä'  (K  (J  
+~+  ot  
+*   0 8   6  ou  
+
+(\  
+rı pç  ¢(v  
+åW  ¢(]  
+s2  *0 K   7  ~)  o;  
+~)  r% p–  (  
+ou  
+rk p	o:  ow  
+&~)  o=  * (  
+,râ psx  
+z–N  (  
+oy  
+-râ psz  
+z*Vs:  
+Ä(  ~#  Ä)  *(:  
+**(Q  *  0 ©  9  ,  (G  
+3*~+  o|  
+,~-  -*~-  o?  
+~}  
+(~  
+,*~-  o=  ~-  o@  ~-  o<  ~-  r% p
+–  (  
+ou  
+rk p
+o:  o  
+~+  oÄ  
++*(Å  
+~-  	{  	{  rk po:  ow  
+&(Ç  
+-Õﬁ˛  oH  
+‹~-  o>  +"~-  oÉ  
+oÑ  
+oB  XoÖ  
+2‘~-  o;  oÜ  
+~+  o|  
+Y+oá  
+ow  
+&XoÜ  
+2‡~-  oA  	+$~-  	oÉ  
+	oÑ  
+oB  	X		oÖ  
+2—*      ° 7ÿ     nsà  
+Ä+  Ä,  ~#  Ä-  *{/  *"}/  *{0  *"}0  *{1  *"}1  *(:  
+* 0 Ç  =  s]  
+~  rü poâ  
+(  
+,›S  r6 p	ç  
+
+–-  (  
+¢
+–Q  (  
+	(  (  +oX  oW  ˛˛(  rf pç  –-  (  
+¢–K  (  
+(  	(  +o\  o[  ˛˛(  ré pç  –-  (  
+¢–  (  
+oä  
+¢–  (  
+oä  
+¢–Q  (  
+(  (  +oZ  oY  ˛˛(  ﬁ&ﬁ *  A          y  y       .(^  Ä.  *6{2  oã  
+*:{3  oå  
+*6{4  oç  
+*:{5  oé  
+*6{6  oè  
+*6{7  oê  
+*:{8  oë  
+*6{9  oí  
+*:{:  oì  
+*>{;  oî  
+*6{<  oï  
+*:{=  oë  
+*6{>  oï  
+*:{?  oë  
+*2{@  oñ  
+*(:  
+*   0 T  ?  ~.  ,›B  so  
+–5  (  
+r¬ p–1  (  
+(  (  +}2  (  +}3  –5  (  
+rﬁ p–_  (  
+(  (  +}4  (  +}5  ~  r˙ pol  
+	rã p–%  (  
+(  	(  +}6  	rì p–  (  
+(  	(  +}7  	(t  }8  –`  (  
+rü p !ç  ""–%  (  
+¢"–%  (  
+¢"–c  (  
+¢"#–Q  (  
+$ !#$(  (  +}9  ~  rΩ pol  
+(  +}@  –`  (  
+%r˚ p&'(%&'((  (  +}<  –`  (  
+(t  }=  –`  (  
+)r p*+,)*+,(  		(  +}>  –`  (  
+	(t  }?  ~  r! pol  
+
+–`  (  
+-re p./
+0-./0(  
+1rs p23ç  44–A  (  
+¢45–K  (  
+612356(  
+7rÖ p89ç  ::–A  (  
+¢:–K  (  
+¢:;–Q  (  
+<789;<(  |:  |;  (u  ﬁ&ﬁ *A          K  K       0 2   A  –  (  
+(ó  
+
+(ò  
+çd  	¢	(  +oö  
+*  0 =   F  –  (  
+(ó  
+
+(õ  
+(ò  
+çd  ¢(  +	oú  
+*   0 T   I  –  (  
+(ó  
+
+–  (  
+(ó  
+(ò  
+(ù  
+	çd  ¢¢(  +oû  
+*0 m   L  –  (  
+(ó  
+
+(õ  
+–  (  
+(ó  
+o  
+(õ  
+(ò  
+	(ù  
+çd  ¢¢(  +oü  
+*   0 Æ   N  –`  (  
+(ó  
+
+–A  (  
+(ó  
+–K  (  
+(ó  
+(ò  
+	çg  ¢(†  
+çd  		¢	¢	(	  +o°  
+Q	(¢  
+çd  
+
+¢
+¢
+¢
+(
+  +o£  
+Q*.(p  ÄA  *:(:  
+}C  *F~B  {C  od  *F~B  {C  oe  *J~B  {C  of  *2-*sw  *.~A  ÄB  *   0 2     o;  
+(•  
+
++o<  
+s  o¶  
+&X
+o;  
+2ﬂ*  0    S  (<  
+
+u  -*o  *&(ß  
+*   0 \   U  o®  
+(©  
+(™  
+o´  
++&o¨  
+•l  
+ (≠  
+ (Æ  
+s  (Ø  
+o∞  
+-“ﬁu7  ,oH  
+‹*    2J     0    S  (±  
+
+u  -*o  *&(Ø  
+*~~.  ,~.  oW  o∆  
+*(é  *í~.  ,~.  o[  o«  
+s≈  
+*(ê  *  0 `   Y  (å  (»  
+,	(…  
++,(ã  ~.  ,~.  oY  oT  *(ë  
+˛î  sΩ  
+Q˛ï  sΩ  
+Q*0   \  s°  
+,o∏  
+~R  oπ  
+,*~Q  -*o∫  
+}Y  {Y  oª  
+{Y  sì  }Z  o∏  
+~R  {Z  oº  
+˛¢  sΩ  
+˛£  sæ  
+	sø  
+˛§  sΩ  
+˛•  sæ  
+(è  	˛¶  sΩ  
+
+˛ß  sæ  
+
+sø  
+˛®  sΩ  
+˛©  sæ  
+	(è  * 0 @  d  s™  	}c  	}d  	}e  	}f  	}g  	o∫  
+}[  		˛´  s¿  
+}\  	˛¨  s¿  
+
+		˛≠  s¡  
+}]  	|c  (¬  
+,oC  
+,	{e  	|c  (¬  
+o∂  
+*		|c  (¬  
+}^  	~Q  o∫  
+og  }_  		˛Æ  s}  }`  		˛Ø  sΩ  
+}a  		˛∞  sæ  
+}b  	˛±  s√  
+	˛≤  sƒ  
+s  ~Q  on  ~Q  oa  	|c  (¥  
+*0 7   k  ,o∫  
+,~Q  -
+ ˛(  *~Q  o∫  
+  Ä  oh  s≈  
+*ño∏  
+~R  oπ  
+t  %-&o∫  
+sì  *V~A  ÄQ  s:  
+ÄR  *:(:  
+}S  *  0 "   l  
+{T  -{S  o≤  
+
+{T  %-&*  0 "   l  
+{U  -{S  o≥  
+
+{U  %-&*  0    m  (   
+
+(ó  oD  
+ﬁ(ó  ‹*         (À  
+*0 E   n  (Ã  
+oÕ  
+,(Ã  
+oŒ  
+,(œ  
+*~V  
+,oö  oD  
+oú  rÌ po–  
+&*(—  
+*{W  *"}W  *{X  *"}X  *(:  
+* 0 ﬁ   p  sû  
+–v  (  
+rù p~k  
+–Q  (  
+(  (  +oõ  oö  ˛˛(  –v  (  
+	r… p
+ç  –u  (  
+¢–%  (  
+¢–K  (  
+	
+(  (  +où  oú  ˛˛(  ﬁ&ﬁ 	*        ◊◊   .(ü  ÄV  *(:  
+*F~Q  {Y  oj  *J~Q  {Y  ok  *2{Y  o≤  
+*6{Z  }T  *F~Q  {Y  ol  *J~Q  {Y  om  *2{Y  o≥  
+*6{Z  }U  *(:  
+*^~Q  {[  {g  oh  *>{\  oC  
+˛*b~Q  {[  {g  oi  *∂,ró poN  
+-(O  
+-{_  {f  oÇ  * 0 T   q  |c  {^  (¥  
+{\  oC  
+
+{]  oµ  
+{d  oñ  
+{]  oµ  
+{e  sE  
+o∂  
+*0 ^   r  {`  o∑  
+o~  ~Q  o`  
+{`  sÖ  ~Q  oa  ~Q  ob  {`  sà  ~Q  	oc  *6{]  oµ  
+*0    l  {a  oñ  
+
+{b  o∂  
+oÖ  
+*     
+%M       9    E   '  RSDSŸ^˙+ÿï@áuO£íE$   Microsoft.Web.Infrastructure.pdb    BSJB         v4.0.30319     l   8!  #~  §!  '  #Strings    ¥H  0	  #US ‰Q     #GUID   ÙQ  p  #Blob         W_¢		   ˙%3      z   #   g   ≤   ª      “      X      u            +                    –       
+  L -  Ä `  Ø û  — `  Ò  :  SÒ  jÒ  óá Ω`  ŸÒ  ÚÒ  Ò  &Ò  EÒ  `
+  gá Å
+  çÒ  õ
+  †`  ª
+  ŸÒ  ÈÒ  ˆÒ  ˝Ò  ,Ò  YÒ  }
+  °
+  ∆™ 
+  # 1 =Ò  Q
+  _
+  u | πÒ  “
+  ıÒ 
+ 
+   &
+  0
+  7
+  jW Ät ±
+ 
+ ◊∏
+ Î∏ $ 9
+  Má k
+  És ès ¿• «™ ⁄™ Ûá 
+  +
+  j• Ñx èW Í’ 
+  "
+  V f ßí ∆
+  ŒW ‘ 	 	
+  3		 S	
+ 
+ n	X	
+ á	X	 ú	 Ø	f ÷	f 
+
+  
+
+  5
+
+ Û G
+   å
+W ò
+
+  ™
+
+  ∑
+
+  ”
+W ›
+ È
+
+  
+
+  	˘
+ 9! M! ^! k! ï! ≠! ≈! ﬂÒ  ˇW W %
+  JW \W z
+  ¢W “
+  ¸™  9 E
+ 
+ ≠ï Ï&Ÿ&Á '             Ä E   Ä 8E    IYπ     êYE     ØY≈     ∆Y—   Ä ‚E   É Ù  E     E    †      )   #E  ,   6QE  2   ÇQE  3 Å ûQE & F É ≥  E & G   …QE * N Ö ·  E + Q    ÒYq. S   YE . W   7YE 2 `   XYE B w    oYqD }    åYqD Å   £Y≈ D Ö   ΩY}D à    ◊Y≈D ã Å ÏYE Q ã É ˛  E Q é    E S ì Å (E V ñ Å :E V ò  O  E V ö  i  E Y °  |  E [ ™  ó.3 2P3 ÒP3 
+ P3 MP! @! H eU! wX! à[! †_! 	v! ~! 0É óûQÄ∂°QÄ…°1 Ÿh! Úm! §o& Ω°& õ°6 ¬ú ›• ˛© +≠ G≠ i© é© ≥© ‹• • 8± \•6 µ à~ ∂πQÄ÷° ËU1 X1 µSÄ®°3 ¿… œû3 µ6 *	 -.	 V8	 Å<	 Já	 yî	 ®°	 ◊Æ	 ª	 #ƒ	 BÕ	 a÷	 }‚	 óÓ	 ±˙	 ÀÕ	 Â˙	 Õ	 '
+6 
+1 
+! wXˆ ûVÄ˛ VÄ!VÄ+!VÄA!VÄW!VÄu!VÄç!VÄß!VÄº!VÄœ!VÄÊ!VÄ"1 
+1 f"X! 	#¢ #ß #ß6 P í#~ π#U K¢ <$Ç K¢ '%v 9%Ü K%ß e%é t%_ â%
+ ù%í ß"ú µ"
+ ∆"í „"• Ù"–     êô ‚     ñ 8      ñ ¿= !    ñ ÏH L!    ñ S	 }!    ë :a å!    ñ Jg ï!    ñ Jo ≤!    ñ@JZ  º!    ñ@r ≈!    ñ@Ü –!    ñ@ó% ∞"    ñ@Õg T#    ñ@‚4 $    ë Ù< ]$    ë I  h$    ëêô! ≈$    Ü' ∫! ’$    Üp)# ‚$    Üò6# $    Ü' c$ %    Ü ”á& 0%    Å Ê & h%    ë ıj& à%    ë ıo' ˘%    Ü' ã( &    ∆é<+ L&    Ü' a+ \&    ñ åô, c&    ñ åô, x&    ë ©ô, ∞&    Ü'  , ¬&    É' q, —&    ÊE - ‡&    Å w- (    ë #Ç- D(    É >œ- j(    ë Wà- ®(    Ü ã . ‰(    ëêô.       ∆<˘.       ∆Û˛.       ∆Kè/ (    Ü' ï0 ˇ(    ÊE 1 )    Ê<˘1 )    ÊÛ˛1 ()    ÊKè2 M)    ∆ ®o 3 Z)    Ü' à3 p)    ë ‘¡5 À)    ÜÚÀ5 ”)    Å—5 ‹)    Ü4ÿ6 ‰)    ÅE·6 )    Ü VÎ7 *    Ü rÚ8 $*    Ü@ü˙: P*    Ü@ƒ= c*    Ü Â= v*    Ü ˘= Ö*    Ü > ò*    Ü +? ¨*    Ü D? –*    Ü m%A 0+    Ü ò1C R+    Å'  F \+    ë ∞<F –.    ëêôF Ê.    ñ ºAF /    ñ ºAG h/    ë  AH /    ë ;AI $0    ë YvJ h0    ë zôK ø0    ë óAK Ú0    ëêôL 1    Å'  L 1    ÊE L 1    Ê≥¬L 1    ñ ≥“M ‰2    ëêôN      Ü' „ N      ∆PŸP      ∆ÚS      ∆	X  3    Ü¶G	[ 3    Å¬R	[ 3    Üﬁ^	\ 3    Å¸c	\ "3    Üi	] *3    Å2u	] 33    Å'  ^ <3    ë ∞Ç	^ Ë4    ëêô^ Ù4    Ü E
+^ 5    Ü i
+_ 5    Ü ì(
+a 5    Ü ∑1
+b .5    Ü ·;
+d <5    Ü ˜d e J5    Ü i f Y5    Ü 0@
+h g5    Ü SH
+i v5    Ü qQ
+k Ü5    Ü ä[
+n î5    Ü ¢d
+o £5    Ü ∫[
+q ±5    Ü Ÿd
+r ¿5    Ü ¯ãt Õ5    Å'  t ÿ5    ë ∞n
+t T9    ë@ s
+t î9    ë@ Ç
+u ‡9    ë@A í
+w @:    ë@A °
+x º:    ë@U Ø
+z v;    ëêô Ç;    Å' œ
+ ë;    Üho Ä £;    ÜpáÄ µ;    Üòœ
+Ä »;    ñ ≤ ‘
+Å ’;    ëêôÇ      Ü' „ Ç      ∆PàÑ      ∆⁄
+Ü      ∆Ê
+ä      Ü' „ ã      ∆PÌ
+ç      ∆ˆ
+ê      ∆Ê
+ï ‰;    Ü' ñ $<    ∆ò@ò K<    ∆ˆ∑ô X<    Ü' õ –<    ∆òd ù ˜<    ∆ˆi û =    ñ  "Ï† !=    ñ 8"R° H=    ñ L"^¢ ¥=    ñ Å"Ï• ÿ>    ë ï"w¶ $@    ñ 8"R¨ g@    ñ L"ö≠ ç@    ëêôÆ £@    Ü' ¨Æ ¥@    Ü ##ãØ ‰@    Ü .#ãØ A    ñ @#≥Ø LA    ë@\#Ï∞ TA    ñ Öô± •A    ñ n#ç± ≠A    Ü‹#À≤ µA    Åˆ#—≤ æA    Ü$a≥ ∆A    Å&$n≥ œA    Å'  ¥ ÿA    ë ∞|¥ ‘B    ëêô¥ ‡B    Ü'  ¥ ËB    Ü S$ã¥ ˙B    Ü m$a¥ C    Ü ã$ãµ C    Ü •$aµ (C    Ü ø$ã∂ :C    Ü Ÿ$a∂ MC    Ü Û$ã∑ ZC    Ü %a∑ hC    Ü'  ∏ pC    Ü ∞%œ∏ àC    Ü »%œ∏ òC    Ü ‡% ∏ ±C    Ü ¯%àπ ‡C    Ü &ãª @D    Ü (&aª ™D    Ü @& º ∏D    Ü Y&<º    æ   –   ’   ﬁ   ˆ      ’      ˆ   $   ’   ﬁ   /   ’   W   ^   W   e   ^   W   |   ^   |   ^   ë   ¬   ¬   –   e  ﬁ  /   ,   W   ^   ë   ≤   ¬   ë      J   ]   o   à       y   ü   ü   ±   ü   ü   ü   –   ë   ë   ^   ^   ë   ü   –   ∫   ë   ^   ^   b   ^   ç   ^   ü   Æ   À   À   À   À   À   À   ∏   ∏   „   W   ∏  Í  ı   ∏  Í  ı      „  Í  ı   &   ë   ë   ë   ^   ^   ç   ^   ^   €   ^   ^   ^   '   K   ^   l   ^   l   ë   ^   ^   ë   ^   ^   ë   |   6    |   |   6    |   y    à    ì   û   ®    ≤   ë   ≤   „   W   ë   ∑    ë   ∑       „   &   „   W   ë   ∑    ≈    ë   ∑    ≈       „   &   ◊    ¬   ·    ·    ë   Á    ¬   Ú    Ú    ë   ∏   ∏   ∏  Í  ı   ∏   ∏   ß"   µ"   ∆"   „"   Ù"   ∏   ∏   K   U#   ∏   à#   ë   ë   á$   à   á$   à   ë   ë   Ú    à
+ ›  ›  ,  ›  9	 '   '   '  ! ' 
+ ) '  1 ' 
+ 9 ' 
+ A ' 
+ I ' 
+ Q '  Y ' 
+ a ' 
+ i ' 
+ q ' 
+ y ' 
+ Å ' 
+ ë '  ± '  π '  ©  ¡ # © 6+ · ?3 © M8 © d@ È n3 © èS ˘ ‰Z · Ûd · ¸i !Ho )Xs ' | © á fè AÑï åö Aëï Aïï å° Aüï å™ A¶ï ‰Ω A™ï åƒ A∞ï © dÃ Iƒ‘ $ ' „ QÿÈ ° „3 © ˛, @, H4 P)< P6â '  âé<âò@ë' 
+ ë°Eë°Lâ ®o â'  D P)L P)ôP °' a© ±0hπE ¡'  ŸòoT '  È' }˘ ) Ö)1ç…?íT E6˘IôYVùõ•†∏1 ßo \ ' „ ≥œ…∑<…¡<…À<)ˆÈ)Ô9' 
+ —E —<˘—Û˛—KÈ 
+˘ ‰l P)¡ P,t P<© ÈC˘ ˘,| PU© @	]YK	bë' h°§	o°™	vÑ P)I 	Ç±' à©Eéå E6© Á	o π
+ùaE£¡' 
+ © $
+®…' 
+ d P6å é<1R
+Æ1M±aW
+∑å ^
+Ωî l
+)î x
+œiÅ
+”ià
+ÿ©é<Ÿé<aò@å '  YK	ﬂ© ≈
+3 § P<¨ PU¥ P<º PUƒ P<Ã P<‘ PU‹ P<‰ PMÏ PaÙ P<ú P)9vw9Ä9Üä¸ ç)9•∑ç)9æ€ç)ç)9⁄ç)9⁄E$ç)Y' 
+ â'  âE£âˆ∑˘é<q4s˘' y˘^
+ÅÅl
+áaháapá˘ˆi Åx
+œ˘òd ãàã,ò64P6<P6°ò©iÆÆëòd i∏¥ƒ ëˆi ú ' „ <' „ ,' ∫L ' „ 4' „ ,p)ô' „ D ' „ D' 6LP6TP<D›)DÔœil
+ÊiÏπOÛπaœπrœ±Öô\PM¡Ωç…' 5 @ § D  ò G ® }      % $* (/ ,4 09 4> 8C <H @M! ì . [ v. k . [ . c Ë. s #. { K.  Q. É K. # p. ì<.  E.  K. 3 Ñ. ; ó. S . + {. C ﬂ. K KC ã c ã É ã £ ã #ã Cã cã Éã √ã „k ì ã Cã Éã £ã √ã ##$#ã Cã C#$Ék†K£ã √ã „kk#ã @KCì cì Åì °ì †K¿ã ‡ã ·ì  ã ì  K!ì Äì †ì ¿ì ‡ì ¿K 
+K‡
+ì ·
+ì  ì ì  ì @ì `ì Äì ¿K‡K K@K`KÄK†K¿K‡ã  K K@ì `ì Äì †ì  % x ) x - x 1 x 5 x 9 x È x Ì x ≈x …x Õx —x ’x ]∫W≠\©a•f~É°±]Uàûûº¿∆À”ÿ‹·ÂˇmX	!'+o19DNS_jvzÜëµ˚ 	(-ÆOT]*	ë
+  %5;X]lçí¢«’*;AGKW\afÇqy›‚
+íú•Ávß~É%P+MTaej           
+   !    r&@  x&E  ~&I  õ&O   "X  L"c  8"h  ®&t  r&x  ¨&|  ¨&Å  ±&I  «&Ü          4   5   6 	  7 	  X   W   Y   Z   [   \   x   y   z   á   Ü   â   ä   ö   õ   ú   ù  P y ≥ ⁄ !.SZt≈#2K{ï«ÊÔ˚'/7BVk®ÕÛ5cëô†Ã”‹˘Ä            ì             Ò               
+                               í               ˙    	          !   "  #       é    é    é    Æ   ∏    ∏    ∏    „ #    „ +     Â +     Á #    Á + g ˚ © ≥´ ≥± „3ú3¬3Á33(3V ™ Ø ∫ ∆ “ ÿ · Ï ¯‚ ˝Ê ˝‚ Ê ‰ ‰   ‚ * 3     <Module> System CLSCompliantAttribute .ctor System.Runtime.InteropServices ComVisibleAttribute System.Runtime.CompilerServices RuntimeCompatibilityAttribute System.Resources NeutralResourcesLanguageAttribute CompilationRelaxationsAttribute System.Reflection AssemblyFileVersionAttribute System.Runtime.Versioning TargetFrameworkAttribute AssemblyTitleAttribute AssemblyDescriptionAttribute System.Security AllowPartiallyTrustedCallersAttribute InternalsVisibleToAttribute AssemblyCompanyAttribute AssemblyProductAttribute AssemblyCopyrightAttribute AssemblyConfigurationAttribute AssemblyTrademarkAttribute Object SecurityCriticalAttribute Converter`2 ParameterInfo Type CompilerGeneratedAttribute PlatformNotSupportedException ConstructorInfo BindingFlags Binder ParameterModifier GetConstructor op_Inequality FieldInfo GetField get_FieldType op_Equality MethodInfo GetMethod get_ReturnType RuntimeTypeHandle GetTypeFromHandle Delegate System.Security.Permissions ReflectionPermissionAttribute CreateDelegate GetValue SetValue Func`2 System.Reflection.Emit DynamicMethod ILGenerator MemberInfo get_Name String Concat IntPtr GetILGenerator OpCode OpCodes Ldarg_0 Emit Dup Ldvirtftn Newobj Ret Ldarg Callvirt MethodBase GetParameters Array ConvertAll get_ParameterType Assembly get_Assembly Uri System.Web HttpContext ValueType Func`1 Action`1 _getter _setter Invoke System.Collections ArrayList System.Text StringBuilder get_Count get_Item Append ToString Action System.Collections.Specialized NameValueCollection NameObjectCollectionBase set_IsReadOnly System.Threading Interlocked Exchange IDisposable Dispose SecuritySafeCriticalAttribute Version Microsoft.Win32 RegistryKey Registry LocalMachine System.Collections.Generic List`1 RegistryPermission RegistryPermissionAccess CodeAccessPermission Assert StringComparison StartsWith Int32 IsNullOrEmpty Parse Add RevertAssert GetCustomAttributes IEnumerable`1 System.Linq Enumerable IEnumerable Cast Single get_Version Any get_Major get_Minor get_Build System.Globalization CultureInfo get_InvariantCulture IFormatProvider Format InvalidOperationException GetSubKeyNames OpenSubKey HttpApplication System.Web.Configuration HttpModulesSection System.Configuration ConfigurationElementCollection Boolean IList HttpModuleCollection MakeGenericType DynamicInvoke IHttpModule Action`2 System.Web.Compilation BuildManager EmptyTypes GetType Void System.ComponentModel EditorBrowsableAttribute EditorBrowsableState Monitor Enter Exit HttpModuleActionCollection get_Modules HttpModuleAction get_AssemblyQualifiedName Guid NewGuid ArgumentNullException IsAssignableFrom ArgumentException Enumerator Zero Insert GetEnumerator get_Current MoveNext GetKey Get ICollection MulticastDelegate IAsyncResult AsyncCallback MakeByRefType Hashtable HttpRequest Func`3 Action`3 System.Web.Util RequestValidationSource System.Linq.Expressions ParameterExpression MemberExpression Expression`1 Expression Parameter Field Lambda Compile UnaryExpression Convert BinaryExpression Assign MethodCallExpression Call DefaultMemberAttribute set_Item DictionaryEntry IDictionaryEnumerator StringComparer get_OrdinalIgnoreCase IEqualityComparer IEnumerator get_Key get_Value Enum get_Form get_QueryString set_Value IDictionary get_Items get_Request ValidateInput Nullable`1 GetValueOrDefault get_HasValue PermissionSetAttribute set_Current ApplicationShutdownReason HttpRuntime AppDomain get_CurrentDomain get_IsHomogenous get_IsFullyTrusted UnloadAppDomain System.CodeDom.Compiler CodeDomProvider IsDefinedExtension Microsoft.Web.Infrastructure.dll mscorlib System.Core CommonReflectionUtil Microsoft.Web.Infrastructure CommonAssemblies FieldAccessor`1 Microsoft.Web.Infrastructure.DynamicValidationHelper T LazilyEvaluatedNameObjectEntry DeferredCountArrayList ReadOnlyNameValueCollection ModuleInitializer CriticalInitializer KillBitHelper IRegistryKey RegistryKeyWrapper DynamicModuleRegistryEntry Microsoft.Web.Infrastructure.DynamicModuleHelper DynamicModuleReflectionUtil DynamicModuleUtility LegacyModuleRegistrar IntegratedDynamicModule CriticalStatics GetUnvalidatedCollectionsCallback DynamicValidationShimReflectionUtil GranularValidationReflectionUtil NameObjectEntryWrapper SimpleValidateStringCallback ValidateStringCallback LazilyValidatingArrayList LazilyValidatingHashtable ValidationSourceFlag ValidationUtility CollectionReplacer UnvalidatedCollections HttpContextHelper InfrastructureHelper HttpRuntimeReflectionUtil <>c__DisplayClass8 <>c__DisplayClass12 .cctor CS$<>9__CachedAnonymousMethodDelegate1 b FindConstructor type isStatic argumentTypes FindField containingType fieldName fieldType FindMethod methodName returnType GetBindingFlags MakeDelegate method target delegateType ReadField fieldInfo WriteField value MakeFastCreateDelegate TInstance TDelegate methodInfo BindMethodToDelegate MakeFastNewObject ExtractDelegateSignature <ExtractDelegateSignature>b__0 pInfo MicrosoftWebInfrastructure SystemWeb getter setter _hasBeenValidated _nameObjectEntry _nameObjectEntryWrapper _validateCallback nameObjectEntry validateCallback GetValidatedObject ValidateObject GetAsOneString list _hasValidationFired _disableValidation _fillInActualFormContents hasValidationFired disableValidation fillInActualFormContents col Initialize _initializeCalled CheckKillBit _killBitRegKeyName _killBitFwdLink _thisAssemblyFileVersion _localMachine localMachine GetKillBittedVersions GetThisAssemblyFileVersion IsThisAssemblyKillBitted KillBitMatchesThisAssemblyVersion killBittedVersion ThrowIfKillBitIsSet name _registryKey registryKey Name Fx45RegisterModuleDelegate _mi_RuntimeConfig_getHttpModules _fi_ConfigurationElementCollection_bReadOnly _ci_ModuleConfigurationInfo _ci_ListOfModuleConfigurationInfo _fi_HttpApplication_moduleConfigInfo _fi_HttpApplication_moduleCollection _fi_PipelineRuntime_s_ApplicationContext _mi_HttpApplication_GetModuleCollection _mi_HttpApplication_BuildIntegratedModuleCollection _type_ListOfModuleConfigurationInfo _mi_HttpModuleCollection_AddModule Instance <ThrowIfPreAppStartNotRunning>k__BackingField <GetAppConfig>k__BackingField GetFx45RegisterModuleDelegate get_ThrowIfPreAppStartNotRunning set_ThrowIfPreAppStartNotRunning get_GetAppConfig set_GetAppConfig GetHttpModulesFromAppConfig SetConfigurationElementCollectionReadOnlyBit NewModuleConfigurationInfo condition NewListOfModuleConfigurationInfo GetModuleConfigInfo SetModuleConfigInfo GetRegisteredModuleCollection GetIntegratedModeContext GetIntegratedModuleCollection appContext BuildIntegratedModuleCollection moduleList AddModuleToCollection m GetInstance RegisterModule moduleType _moduleNameFormat _integratedPipelineInitialized _lockObj _reflectionUtil AddModuleToClassicPipeline AddModuleToIntegratedPipeline CreateDynamicModuleRegistryEntry InitializeIntegratedPipeline VerifyParameters ModuleName Init context DynamicEntries _hasBeenInitialized object formGetter queryStringGetter BeginInvoke callback EndInvoke result <EnableDynamicValidation>k__BackingField <GetUnvalidatedCollections>k__BackingField <IsValidationEnabled>k__BackingField get_EnableDynamicValidation set_EnableDynamicValidation get_GetUnvalidatedCollections set_GetUnvalidatedCollections get_IsValidationEnabled set_IsValidationEnabled _del_get_NameObjectCollectionBase_entriesArray _del_set_NameObjectCollectionBase_entriesArray _del_get_NameObjectCollectionBase_entriesTable _del_set_NameObjectCollectionBase_entriesTable _del_get_NameObjectEntry_Key _del_get_NameObjectEntry_Value _del_set_NameObjectEntry_Value _del_validateStringCallback _del_BitVector32_get_Item _del_BitVector32_set_Item _del_get_HttpRequest_form _del_set_HttpRequest_form _del_get_HttpRequest_queryString _del_set_HttpRequest_queryString _del_HttpValueCollection_ctor GetNameObjectCollectionEntriesArray SetNameObjectCollectionEntriesArray array GetNameObjectCollectionEntriesTable SetNameObjectCollectionEntriesTable table GetNameObjectEntryKey GetNameObjectEntryValue SetNameObjectEntryValue newValue MakeValidateStringCallback request GetRequestValidationFlag flag SetRequestValidationFlag GetHttpRequestFormField SetHttpRequestFormField GetHttpRequestQueryStringField SetHttpRequestQueryStringField NewHttpValueCollection MakeFieldGetterFunc TTarget TFieldType targetType MakeFieldSetterFunc MakeRequestValidationFlagsAccessors flagsFieldInfo itemGetter itemSetter delGetter delSetter Wrap collectionKey requestCollection innerList index innerTable key value__ needToValidateQueryString needToValidateForm needToValidateCookies needToValidateHeaders needToValidateServerVariables contentEncodingResolved needToValidatePostedFiles needToValidateRawUrl needToValidatePath needToValidatePathInfo hasValidateInputBeenCalled needToValidateCookielessHeader EnableDynamicValidation IsValidationEnabled GetUnvalidatedCollections _unvalidatedCollectionsKey MakeCollectionsLazy ReplaceCollection fieldAccessor propertyAccessor storeInUnvalidatedCollection validationSource validationSourceFlag _request Form QueryString EnsureForm EnsureQueryString ExecuteInNullContext action SetCurrentContext IsCodeDomDefinedExtension extension <SetUserForcedShutdown>k__BackingField <ShutdownAppDomain>k__BackingField get_SetUserForcedShutdown set_SetUserForcedShutdown get_ShutdownAppDomain set_ShutdownAppDomain unvalidatedCollections <MakeCollectionsLazy>b__0 <MakeCollectionsLazy>b__1 val <MakeCollectionsLazy>b__2 <MakeCollectionsLazy>b__3 <MakeCollectionsLazy>b__4 <MakeCollectionsLazy>b__5 <MakeCollectionsLazy>b__6 <MakeCollectionsLazy>b__7 getValidationFlag setValidationFlag originalBackingCollection validateString simpleValidateString getActualCollection makeCollectionLazy <ReplaceCollection>b__a <ReplaceCollection>b__b <ReplaceCollection>b__c <ReplaceCollection>b__d <ReplaceCollection>b__e <ReplaceCollection>b__f <ReplaceCollection>b__10 <ReplaceCollection>b__11 Value Count ThrowIfPreAppStartNotRunning GetAppConfig Key Item SetUserForcedShutdown ShutdownAppDomain System.Diagnostics DebuggableAttribute DebuggingModes   'F a s t C r e a t e D e l e g a t e _  +B i n d M e t h o d T o D e l e g a t e _  %M a k e F a s t N e w O b j e c t _  I n v o k e  k\ S O F T W A R E \ M i c r o s o f t \ A S P . N E T \ S e c u r i t y \ D i s a b l e L o a d L i s t \  iS O F T W A R E \ M i c r o s o f t \ A S P . N E T \ S e c u r i t y \ D i s a b l e L o a d L i s t \  9M i c r o s o f t . W e b . I n f r a s t r u c t u r e  F l a g s  F i l e V e r s i o n  mK i l l   b i t   w a s   s e t .   P l e a s e   s e e   { 0 }   f o r   m o r e   i n f o r m a t i o n .  [h t t p : / / g o . m i c r o s o f t . c o m / f w l i n k / ? L i n k I D = 2 0 4 7 5 9  R e g i s t e r M o d u l e  9T h r o w I f P r e A p p S t a r t N o t R u n n i n g  MS y s t e m . W e b . C o n f i g u r a t i o n . R u n t i m e C o n f i g  G e t A p p C o n f i g  g e t _ H t t p M o d u l e s  b R e a d O n l y  ES y s t e m . W e b . M o d u l e C o n f i g u r a t i o n I n f o  #_ m o d u l e C o n f i g I n f o  #_ m o d u l e C o l l e c t i o n  ES y s t e m . W e b . H o s t i n g . P i p e l i n e R u n t i m e  )s _ A p p l i c a t i o n C o n t e x t  'G e t M o d u l e C o l l e c t i o n  ?B u i l d I n t e g r a t e d M o d u l e C o l l e c t i o n  A d d M o d u l e  /_ _ D y n a m i c M o d u l e _ { 0 } _ { 1 }  E_ _ A S P _ I n t e g r a t e d D y n a m i c M o d u l e _ S h i m  m a n a g e d H a n d l e r  m o d u l e T y p e  ÄïM i c r o s o f t . W e b . I n f r a s t r u c t u r e . D y n a m i c V a l i d a t i o n H e l p e r . D y n a m i c V a l i d a t i o n S h i m  /E n a b l e D y n a m i c V a l i d a t i o n  'I s V a l i d a t i o n E n a b l e d  3G e t U n v a l i d a t e d C o l l e c t i o n s  _ e n t r i e s A r r a y  _ e n t r i e s T a b l e  ÄèS y s t e m . C o l l e c t i o n s . S p e c i a l i z e d . N a m e O b j e c t C o l l e c t i o n B a s e + N a m e O b j e c t E n t r y  K e y  V a l u e  V a l i d a t e S t r i n g  =S y s t e m . W e b . H t t p V a l u e C o l l e c t i o n  _ f o r m  _ q u e r y S t r i n g  CS y s t e m . W e b . U t i l . S i m p l e B i t V e c t o r 3 2  _ f l a g s  g e t _ I t e m  s e t _ I t e m  _ _  +S e t U s e r F o r c e d S h u t d o w n  #S h u t d o w n A p p D o m a i n  AU s e r   c o d e   c a l l e d   U n l o a d A p p D o m a i n   
+Åb√è„H£ÁéxsÅlø       aeiUm aa qe  U UU ueiUm  Uy	 }Uu     
+ UU aU  ÄçÄù Äù Äùu Äùa	ÄÖ  }U Äù ue  QMQU  M 
+QU  Ä≠ ÄΩ Ä¡ ÄΩ    Ä¡       Ä… Ä…ÄΩÄΩ Ä— ÄÈÄÒÄÂ Ä˘ Å  ÄÂ   UÅ	 Å
+ Å	 	ÄÖÄÂÅ	 ÄÖ 
+ÄÂ  Å	 Å    ÄÈ uuÄ¡U }UuÄΩÅ% 	ÄÖÅ5   UU	Å=Å9  U U ÅM  ÄΩ  ÅU  ÅYÄÒ4  Å]  U  	  Åi Åi4    Å9 UÄΩÄ—ÄÖÄ’Ä≈Å=Ä’Ä≈ÄÖÄ’Å}Å=Ä’Å}ÄÖÄÖÅ=
+ÄÖÅÅ`
+ÅÖÅÅ  
+ÅâÅÅ	  ÄÖÅÅÄ— ÅëU
+ ÅïÅùqÅô ÅùÅë
+ÄÖ ÅôÄÖ 
+ Å°ÅùU
+
+ÄÖ ÅôÄÖ  Å•ÅùÅù
+Å= ÅôÅ= 	
+Å=ÅôÅ= Å©ÅùuÅù
+ÅÖÅÅÅôÅÖÅÅ Å©ÅùuÅùÅù
+ÅâÅÅÅôÅâÅÅ  Åπ ÅΩ  Åµ    Ä—Ä—Ä¡Ä¡Ä—   Å…  ÅÅ ÄΩ Ä¡ ÅÕÄ¡Äµ	ÄÖÄµ  Äµ Äµ  Å›
+ÅÖÅ’∑z\V4‡â∞?_’
+:         	 Item  	MQU 
+ aUU
+ qUU uUUU e u uÄú.ÄÜSystem.Security.Permissions.ReflectionPermissionAttribute, mscorlib, Version=4.0.0.0, Culture=neutral, Publickeytoken=b77a5c561934e089TMemberAccess q qÄÖ u U UUU UQÄ≠X\ \  Ä≈ÄΩÄÕÄΩ ÄΩÄÕÄΩhS O F T W A R E \ M i c r o s o f t \ A S P . N E T \ S e c u r i t y \ D i s a b l e L o a d L i s t \ Zh t t p : / / g o . m i c r o s o f t . c o m / f w l i n k / ? L i n k I D = 2 0 4 7 5 9 ÄÂ, ,
+  ÄÒÄÂ  ÄÂ ÄÂ , ÄÈÄ¡UuqaU8ÄΩ	  Ä¡U  ÄÕ ÄÕ  ÄΩ	 ÄΩ Å% Å)   Å1 Å1 Å5Å!  	 Å5Å! Å5Å!Å1
+ Å5Å9  8 U._ _ D y n a m i c M o d u l e _ { 0 } _ { 1 }  4UD_ _ A S P _ I n t e g r a t e d D y n a m i c M o d u l e _ S h i m  Å!ÄÒ4 Å! ÄµÄΩÄ—ÄΩÄ— ÅuÄµÄΩÄ—ÄΩÄ—Åy ÄΩÄ—ÄΩÄ—ÅuP	Ä¡ÄµL
+ÄÖÄµ
+  Ä¡Äµ Ä¡Äµ  L L  ÄÖÄµ ÄÖÄµ  PÄÖÄ’Ä≈Å=Ä’Ä≈ÄÖÄ’Å}Å=Ä’Å}ÄÖÄÖÅ=ÄÖÅÅ`ÅÖÅÅÅâÅÅÄÖÅÅÄ—	ÄΩÄ—T Ä≈Ä’	 Ä’Ä≈ Å}Ä’	 Ä’Å}  `ÅÅ ÅÅl	 ÅÅl Ä—ÅÅ	 ÅÅÄ—  TÄÖ qÄÖ UqÅ= q Å=Uq quuÅÖÅÅÅâÅÅ  X ÅuÅy Åu Åç ÅuÅçÅy Ä≈\ Å}\l                @   Ä          Ä      ÅÕÄµ ÄµÄΩÄ—ÄΩÄ—" ÄµÄ—ÄΩÄ—Ä¡Ä—Åçl xÄµÅÅÄ— ÅÅ ÄÕÄî.System.Security.Permissions.PermissionSetAttribute, mscorlib, Version=4.0.0.0, Culture=neutral, Publickeytoken=b77a5c561934e089TUnrestrictedÄÑÅÖÅ’  ÅÖÅ’ ÅÖÅ’  ÄÑxÄ¡`	Ä¡Ä—Ä—Åç
+ 
+
+ÄΩÅ%
+ÄÖÅ5
+Å=Å9
+ÄÕ
+ÄΩ
+
+Ä¡Äµ
+ÄÖÄµ
+L
+Ä’Ä≈
+Ä’Å}
+
+
+ÅÅ`
+
+ÄΩÄ—
+ÅÅÄ—
+ÅÖÅ’(  ( ( ÄÕ( ÄΩ
+( Ä¡Äµ( L( ÄÖÄµ( ( ((( ÅÖÅ’Ä† $  Ä  î      $  RSA1     µ¸êÁgáw:èﬁâ8»‘∫eπ `Y>ñƒíeàú¡?Îµ?¨1Æ”3≈Ó`!g-óÍ1®ÆΩ†/%ÿ}∫o…˝Yé‘⁄5‰L9åECË„;Ñ&=Æ…ıñÉoó»˜GPÂó\d‚üEﬁÙk*+G≠√e+ı√]© ÅÈ               TWrapNonExceptionThrows
+ en-US         1.0.20105.407  G .NETFramework,Version=v4.0 TFrameworkDisplayName.NET Framework 4! Microsoft.Web.Infrastructure  Ås ÅmMicrosoft.Web.Infrastructure.Test, PublicKey=0024000004800000940000000602000000240000525341310004000001000100b5fc90e7027f67871e773a8fde8938c81dd402ba65b9201d60593e96c492651e889cc13f1415ebb53fac1131ae0bd333c5ee6021672d9718ea31a8aebd0da0072f25d87dba6fc90ffd598ed4da35e44c398c454307e8e33b8426143daec9f596836f97c8f74750e5975c64e2189f45def46b2a2b1247adc3652bf5c308055da9  Åp ÅjSystem.Web.WebPages.CommonTest, PublicKey=0024000004800000940000000602000000240000525341310004000001000100b5fc90e7027f67871e773a8fde8938c81dd402ba65b9201d60593e96c492651e889cc13f1415ebb53fac1131ae0bd333c5ee6021672d9718ea31a8aebd0da0072f25d87dba6fc90ffd598ed4da35e44c398c454307e8e33b8426143daec9f596836f97c8f74750e5975c64e2189f45def46b2a2b1247adc3652bf5c308055da9   Microsoft Corporation   Microsoft ASP.Net WebPages  3 .¬© Microsoft Corporation. All rights reserved.  aqu	ÄâaÄçUUUUÄâÄç	UUÄâÄçUUUUaÄâÄçUUUUÄ≈Ä≈Ä…Ä…((ÄÒÄÂ,,,,	ÄÒÄÂ
+ÄÒÄÂÄÈuU
+ÄΩÅ%	ÄΩÅ%ÄÖÅ5
+ÄÖÅ5U}U}Å=Å9
+Å=Å9i78uUuUUU8UUUUUUUUUUUUUUUUUUUUUUUUUUUUUÅ%4Å%44	Å1Å1!Å5Å14Å5Å1Å5Åi4Å5Åi43PUuuuPUUUUUUUUUUUUn=TqqUqquUqqUquuTUUUUUUUUUUUUUUUUUUUUUUUUUUÅëÅïÅôÄÖ ÅëÅëÅïÅôÄÖ ÅëÅëÅ°ÅïÅôÄÖ ÅëÅ°ÅôÄÖ  ÅëÅëÅïÅ•ÅôÅ= ÅëÅ•ÅôÅ= $ÅëÅ°ÅëÅ°ÅïÅ•ÅôÅ=ÅëÅôÅ=>ÅëÅëÅëÅïÅ©ÅôÅÖÅÅÅ©ÅôÅâÅÅÅùÅëÅëÅ©ÅôÅÖÅÅÅôÅâÅÅÅùÅ±ÅµÄ›Å±ÅµÄ›
+xÅÕÅÕcÄàÄµÄΩÄ—Ä¡Ä—Ä—ÄΩÄ—Ä¡Ä—ÅçlÄµÄΩÄ—Ä¡Ä—Ä—ÄΩÄ—Ä¡Ä—ÅçlÄàÄµÄΩÄ—ÄåÄΩÄÕÄΩÄåÅÕÄ—ÄµÄÑ!ÄÑuuÄÑUUUUUUUÄ—Ä≈dÅ}hdÅ}h  »Æ          ﬁÆ                          –Æ        _CorDllMain mscoree.dll     ˇ%  @                                                                                                                                                                                                                                                                                                 Ä                  0  Ä                   H   X¿  Ë          Ë4   V S _ V E R S I O N _ I N F O     ΩÔ˛      óâN   óâN?                         D    V a r F i l e I n f o     $    T r a n s l a t i o n       ∞H   S t r i n g F i l e I n f o   $   0 0 0 0 0 4 b 0   L   C o m p a n y N a m e     M i c r o s o f t   C o r p o r a t i o n   d   F i l e D e s c r i p t i o n     M i c r o s o f t . W e b . I n f r a s t r u c t u r e     <   F i l e V e r s i o n     1 . 0 . 2 0 1 0 5 . 4 0 7   d !  I n t e r n a l N a m e   M i c r o s o f t . W e b . I n f r a s t r u c t u r e . d l l     Ä .  L e g a l C o p y r i g h t   ©   M i c r o s o f t   C o r p o r a t i o n .   A l l   r i g h t s   r e s e r v e d .   l !  O r i g i n a l F i l e n a m e   M i c r o s o f t . W e b . I n f r a s t r u c t u r e . d l l     X   P r o d u c t N a m e     M i c r o s o f t   A S P . N e t   W e b P a g e s     @   P r o d u c t V e r s i o n   1 . 0 . 2 0 1 0 5 . 4 0 7   8   A s s e m b l y   V e r s i o n   1 . 0 . 0 . 0                                                                                                                                                                                                                                                                                                                                                                                                                                                                    †     >                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      h    0Ç[	*ÜHÜ˜†ÇL0ÇH10	+ 0h
++Ç7†Z0X03
++Ç70% † ¢Ä < < < O b s o l e t e > > >0!0	+ çÚcúà d[lëL’ArˆõEêè†Ç10Ç`0ÇL†
+.´‹Pˇ\ùÀ¿0	+ 0p1+0)U"Copyright (c) 1997 Microsoft Corp.10UMicrosoft Corporation1!0UMicrosoft Root Authority0070822223102Z120825070000Z0y10	UUS10U
+Washington10URedmond10U
+Microsoft Corporation1#0!UMicrosoft Code Signing PCA0Ç"0	*ÜHÜ˜ Ç 0Ç
+Ç ∑y}÷]≥E9®4¨1⁄˘%5Iw¿˚û«EqÔ—FË‘å√kLRbÙô√MÿIl/$>eøŒ#∑H∑u›EΩ™èP≈%+Ú†Á#—A$˙bôœE•ìJôÕ≥/"√J-|oŸ;å99›Ω)Ùf;-2ˇ˛'H¶µláú˚∫≤cÇ˘\†ÅÑÖé∞Ú∏î£œ8¶PÖ'áN›0ˆ =Ù∆˘=ÅæÜÌl9ß.4ˆ¥.Ø
+}bëxfúòsÜØÚƒÛ πOçcÀ,Ÿ2EÓªJñ;PSŒfQy™≠á»V>üÇPàn±5¡{$ΩRf=ôNÃ+~3nÑG—û–JÜnÜ §¿áﬂS £Å˙0Å˜0U%0
++0Å¢UÅö0ÅóÄ[–pÔirû#Q~≤MéˇÀ°r0p1+0)U"Copyright (c) 1997 Microsoft Corp.10UMicrosoft Corporation1!0UMicrosoft Root AuthorityÇ ¡ ã<<à—>ˆcÏﬂ@0Uˇ0ˇ0UÃŒv p[ØÒ⁄ƒNöQD.£Dc0UÜ0	+ Ç {´Æ~J&ÚŒºNt¢X't*u≥Ü˝´Lîx MÈ Î‹i≈¢|ÛC∆ áÃ¯SÃ¬üΩVocD©D Óñ»ö’∏üî◊⁄≠)}ÔÌ¶s¨èﬁ9é=òjº8m“àØ#˝ﬂÈ÷i	ëàΩ˛· ª4Û˜|˘.Î)ñìBk(q∑8è‡…]hÕΩÄAkf®ª∑ªé4 Ú|zı“‡Bﬂ{˛··¨˛ˆﬂ’≥p÷í„O∂8¢|-‘=€4b7üÅj#âˆ\cè∞Zª9◊`åUÑ3ı;ò†Ç¢_ã≥,∑°•À´⁄ ∂ø0Ö *ºRÙA‡^0„í(iá¡p‚Ûß´ŒÄBrv0Çz0Çb†
+aœ>     0	*ÜHÜ˜ 0y10	UUS10U
+Washington10URedmond10U
+Microsoft Corporation1#0!UMicrosoft Code Signing PCA0091207224029Z110307224029Z0ÅÉ10	UUS10U
+Washington10URedmond10U
+Microsoft Corporation10UMOPR10UMicrosoft Corporation0Ç"0	*ÜHÜ˜ Ç 0Ç
+Ç Ω0â˚Er®SkûâO #¿æ‘=±Y@8ÛsëÇ&Êñ SŸÇ<ŒªΩ˜Bçó‘¸8‰π˘„Ï”aø†”÷uM\F©Ì^“‚i[sÍ≥çÕ)D†dY/ò]n«´9Çeƒßº´uàÍáó&≥&v§‘89Ñ„≥&’˘+È“…ZT!ÚóçáÜ)˛ÙI,Êã¯?}ÕÕñíÜq‚–˛B5ˇ◊∏?›éE
+}ˆ◊K≠[vrw#}â5ƒ]≤PKGmßUàòÄ¶Å≠TNÿÅ÷˙øB¿1æUô’SI0ÎÂ•à|^ƒzZá¥7i†Î2$åÎ˘‘∫‡¸ÕÍ§ £Å¯0Åı0U%0
++0U8xs»2õ_íÜUØâ∫∆ô±té0UˇÄ0U#0ÄÃŒv p[ØÒ⁄ƒNöQD.£Dc0DU=0;09†7†5Ü3http://crl.microsoft.com/pki/crl/products/CSPCA.crl0H+<0:08+0Ü,http://www.microsoft.com/pki/certs/CSPCA.crt0	*ÜHÜ˜ Ç (É´Ò˛oBvÿC´∏∆B˙$e4Æu∞q0éñ∂É˙r‰˛Õ7Á:pòQ ∫q¥…Ù’‰äË(ps’Ì·¬{ÓÒV4ZÄÇÎ◊rÍNÏ›å{DOau˝nú›Œ+Z9∞`˝⁄ˇ™£ÿ˙é£ªΩ¡jT;1_‰,nÀÒM*Úv{ÜØ∆á÷±*Ì¨Ã¿‰üËœËÑrTÇn*»ûï¥¡oì€b¶¡Kk≠…Ì=í„≤/´zw9gj {ÇùﬁcïI&Bﬁï"¡á–£_‹s2r6ˇ»)≈$ROfH…©≈&9iPNßÏ¬l.rÒ!⁄m$HÄÅ@|üÃt8JO0Çù0ÇÖ†jôO¿ %´€EXzg¢0	*ÜHÜ˜ 0p1+0)U"Copyright (c) 1997 Microsoft Corp.10UMicrosoft Corporation1!0UMicrosoft Root Authority0060916010447Z190915070000Z0y10	UUS10U
+Washington10URedmond10U
+Microsoft Corporation1#0!UMicrosoft Timestamping PCA0Ç"0	*ÜHÜ˜ Ç 0Ç
+Ç ‹7n˚Ø»BJq»ŒH>S¿˙´∫,2ªOR»ÉÌ>3ŸI1í(∂ëd‡PÑ∫¬K—¯Ôuæã«®’Æipfx'fË∂∑ÔÖπÕÓ™˝§Y")/œ@ŸVvµmdmJT€›ÒﬁøüÉ«ÄﬂL7îı¿ûVhGÕŸ¿v\/}∂%¥V[jcˇÄ|<Ó’%M9wt]¬\ÿÜ7,u…Í9	|v˛ùlnz‡Ï>èóûq_*Ob`2û“ÉN+"\hEãﬁ/ÑP≤˘µçlÓ%õ¯À◊ÖÙÇvs6∆ïz¢Ã`Ï∞Ü3∑¯î[ÑAÑXÖîn∞,HÃoúC‡jË&ék £Ç(0Ç$0U%0
++0Å¢UÅö0ÅóÄ[–pÔirû#Q~≤MéˇÀ°r0p1+0)U"Copyright (c) 1997 Microsoft Corp.10UMicrosoft Corporation1!0UMicrosoft Root AuthorityÇ ¡ ã<<à—>ˆcÏﬂ@0	+Ç7 0UoËN?óπ4´KÜèºúÍ¨;AC∆–0	+Ç7
+ S u b C A0UÜ0Uˇ0ˇ0	*ÜHÜ˜ Ç îM1¬|Pªé°aåpEçÔsTΩ?	-ˇ∏QSÖÌ9ë∑£Vﬁå∂;—˚¨ß…∑±Q!oi~k¢"FÌl¥m|"∏F”ÑÛçæä6¡Î~Èp]Eüí“ÃŒ›é¿·ø*Õ|Ï…Æ2’áπÀcƒ6—!øvﬁ;ö≥sû!àÿ¥¥TåÙú¬eJö(&ú`ä;«exHªœ≠É:O∞bXﬁ0ÈÈ9„âÚ⁄9Å˘!ådÄcñÚöC/{Fà∫ˇŸe˘Jﬁ⁄tì≥nÃù‹(a|HÒú!8á¨≈ñ2∏Â@∆S=Ω©âﬁËf7çÙ"ñúÃ∞wTQ:÷rD≤#ˆ0Ç™0Çí†
+aî-     	0	*ÜHÜ˜ 0y10	UUS10U
+Washington10URedmond10U
+Microsoft Corporation1#0!UMicrosoft Timestamping PCA0080725190217Z130725191217Z0Å≥10	UUS10U
+Washington10URedmond10U
+Microsoft Corporation10UMOPR1'0%UnCipher DSE ESN:7A82-688A-9F921%0#UMicrosoft Time-Stamp Service0Ç"0	*ÜHÜ˜ Ç 0Ç
+Ç ïÅ
+ BQzŸïÌõ˝‹á—˚èÍ™7(v˛MP´vó*ìG‡©ViÂî~MÖ€qÔu €ªCl˚o¨q+—|íŒîù°≈∫˘˜~›a·-0ú&-v?ÊFñéÆÿâ7ÿÃÔÛœ[√¸h‡ÚdèõË√˘£æÑ¸÷ãŒ=ΩvP'¯Ñ∑Üç`æ]),<œ•˝òZ5O¿8ÿa?=6≥Vwï;˙ ∞ì‚]7´'ªc,HÅU„lÍ©+ïçà~£ •w$ò*p∏*$êöﬁ≈¢"KøLYwTrC∞>d›ìÑX∂˛ÈáI	6≥≥¯3©~L¢y2Y)ûµı‡<û?ÏF; £Å¯0Åı0U(ïàø;Î⁄î∫}F˙ÀÙ~ùˇ—0U#0ÄoËN?óπ4´KÜèºúÍ¨;AC∆–0DU=0;09†7†5Ü3http://crl.microsoft.com/pki/crl/products/tspca.crl0H+<0:08+0Ü,http://www.microsoft.com/pki/certs/tspca.crt0U%0
++0Uˇ¿0	*ÜHÜ˜ Ç  Ó¨¸‚“àf )„ZπÕ Ç~\≈$Yª®˜k◊á˛çÀµv"ˆ˜· ¥πA7≠H7ñp˙Ã3ß(å∏∂t(∑≥u·*	‚ãOﬂò?ó∑4ÅÍ›‹∫dœNP;Lä˝›%Æ’ñáÍKƒÂ˘A]ÎWà}vzÂo˛á ¨ìúåöø_†0$‡¢~aë))√Iê:CÉâÓﬁ’É›O,5;ÁAA™ Ú÷IŒBç{∞Û-ç])·æçëv¥`˚'™ocB(X:ä;ã@‰∑≈ÃíWFVkèÀíMV  ¯0@ENﬂàΩı›ﬂ(¥QÚw‡&„ª	Å‹:–E1Çï0Çë0Åá0y10	UUS10U
+Washington10URedmond10U
+Microsoft Corporation1#0!UMicrosoft Code Signing PCA
+aœ>     0	+ †Å¿0	*ÜHÜ˜	1
++Ç70
++Ç710
++Ç70#	*ÜHÜ˜	1a&:l3§‰1¡™¸4R!≈~Y0`
++Ç71R0P†8Ä6 M i c r o s o f t   A S P . N E T   W e b   P a g e s°Ähttp://www.asp.net0	*ÜHÜ˜ Ç ö Nf…ˆF®¡ÓˇèÁ,5+´πjc4(∏Ÿ*xÜ‹_'sˆı7êoK&«o_*”]ãìi[tìqËJ&ÁÆ˛p)íu—{M—SAu)π
+∞™ÀÁ»
+sıë∂Ô¡rxmÚc˙Êıóı0oj¥'ôjX˙JßPﬁßÆ…™dìæ£u¿‚/À±ã÷)Ë´ºü&¡¶Ë`eà5ÎÚ	¢ÄÛìöÄxŒÀΩN*PM}∆( '˘Yºtsè®r≤µJivöÏ)(,»uzô˝?E9õf_ß4∫§ª%ûgëd(Ê àNÄq”÷JR(≥§√&öâ‡≠ÑJáŸ†k˙]Ωg°Ç0Ç	*ÜHÜ˜	1Ç0Ç0Åá0y10	UUS10U
+Washingto

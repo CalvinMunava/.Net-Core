@@ -1,0 +1,31 @@
+﻿<Properties StartupConfiguration="{069BAFC0-96E2-4F3A-8D9E-376A77D22AE3}|Default">
+  <MonoDevelop.Ide.Workbench ActiveDocument="ShoppAPI/Controllers/ApplicationUserController.cs">
+    <Files>
+      <File FileName="ShoppAPI/Controllers/ApplicationUserController.cs" Line="71" Column="1" />
+      <File FileName="ShoppAPI/Controllers/UserProfileController.cs" Line="35" Column="17" />
+      <File FileName="ShoppAPI/Startup.cs" Line="1" Column="1" />
+    </Files>
+    <Pads>
+      <Pad Id="ProjectPad">
+        <State name="__root__">
+          <Node name="ShoppAPI" expanded="True">
+            <Node name="ShoppAPI" expanded="True">
+              <Node name="Dependencies" expanded="True" />
+              <Node name="Controllers" expanded="True" selected="True" />
+              <Node name="Models" expanded="True" />
+            </Node>
+          </Node>
+        </State>
+      </Pad>
+    </Pads>
+  </MonoDevelop.Ide.Workbench>
+  <MonoDevelop.Ide.ItemProperties.ShoppAPI PreferredExecutionTarget="/Applications/Firefox Developer Edition.app" />
+  <MonoDevelop.Ide.DebuggingService.PinnedWatches />
+  <MonoDevelop.Ide.Workspace ActiveConfiguration="Debug" />
+  <Debugger.DebugSourceFolders />
+  <MonoDevelop.Ide.DebuggingService.Breakpoints>
+    <BreakpointStore />
+  </MonoDevelop.Ide.DebuggingService.Breakpoints>
+  <MultiItemStartupConfigurations />
+  <AuthorInfo Name="calvinmunava" Email="munavadev@gmail.com" Copyright="2020" Company="Y Link" Trademark="" />
+</Properties>
